@@ -44,9 +44,9 @@ type model struct {
 
 func newModel(root string) model {
 	ti := textinput.New()
-	ti.Placeholder = "new-folder"
+	ti.Placeholder = ""
 	ti.CharLimit = 200
-	ti.CursorStyle = ti.CursorStyle.Bold(true)
+	ti.Cursor.Style = ti.Cursor.Style.Bold(true)
 	ti.Focus()
 
 	m := model{
@@ -458,25 +458,83 @@ func (m model) View() string {
 		}
 	}
 
-	// footer
-	if m.state == stateNewDir {
-		fmt.Fprintf(&b, "\nCreate directory: %s\n", m.input.View())
-	} else {
-		b.WriteString("\n[j/k] move  [l/enter] enter/open  [h/backspace] up  [space] select  [d] cut  [p] paste  [a] mkdir  [D] delete  [q] quit\n")
-	}
 
-	if m.status != "" {
-		fmt.Fprintf(&b, "\n%s\n", m.status)
-	}
+    // Show footer only when not in popup
+    if m.state != stateNewDir {
+        b.WriteString("\n[j/k] move  [l] enter  [h] up  [space] select  [d] cut  [p] paste  [a] mkdir  [D] delete  [q] quit\n")
+        if m.status != "" {
+            b.WriteString("\n" + m.status + "\n")
+        }
+        return b.String()
+    }
 
-	return b.String()
+    // -------------- POPUP MODE --------------
+
+    popupContent := fmt.Sprintf(
+        " Create Directory \n\n %s \n\n (enter to confirm, esc to cancel) ",
+        m.input.View(),
+    )
+
+    popup := popupBox(40, 6, popupContent)
+
+    // Center the popup
+    lines := strings.Split(b.String(), "\n")
+    var final strings.Builder
+
+    for _, line := range lines {
+        final.WriteString(line + "\n")
+    }
+
+    final.WriteString("\n\n")
+    final.WriteString(popup)
+
+    return final.String()
+
+	// // footer
+	// if m.state == stateNewDir {
+	// 	fmt.Fprintf(&b, "\nCreate directory: %s\n", m.input.View())
+	// } else {
+	// 	b.WriteString("\n[j/k] move  [l/enter] enter/open  [h/backspace] up  [space] select  [d] cut  [p] paste  [a] mkdir  [D] delete  [q] quit\n")
+	// }
+
+	// if m.status != "" {
+	// 	fmt.Fprintf(&b, "\n%s\n", m.status)
+	// }
+
+	// return b.String()
+}
+
+func popupBox(width, height int, content string) string {
+    lines := strings.Split(content, "\n")
+
+    // pad lines to box width
+    for i := range lines {
+        lines[i] = " " + lines[i] + strings.Repeat(" ", width-len(lines[i])-1)
+    }
+
+    top := "┌" + strings.Repeat("─", width-2) + "┐"
+    bottom := "└" + strings.Repeat("─", width-2) + "┘"
+
+    var b strings.Builder
+    b.WriteString(top + "\n")
+    for _, line := range lines {
+        b.WriteString("│" + line + "│\n")
+    }
+    b.WriteString(bottom)
+
+    return b.String()
 }
 
 func main() {
-	root := flag.String("root", ".", "Root directory to start in")
-	flag.Parse()
+    root := flag.String("root", ".", "Root directory to start in")
+    flag.Parse()
 
-	if err := tea.NewProgram(newModel(*root)).Start(); err != nil {
-		log.Fatal(err)
-	}
+    p := tea.NewProgram(
+        newModel(*root),
+        tea.WithAltScreen(),   // <— Put the TUI in full-screen mode
+    )
+
+    if _, err := p.Run(); err != nil {
+        log.Fatal(err)
+    }
 }
