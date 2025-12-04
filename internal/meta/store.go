@@ -1,7 +1,9 @@
 package meta
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +55,9 @@ CREATE TABLE IF NOT EXISTS metadata (
 	return err
 }
 
-func (s *Store) Get(path string) (*Metadata, error) {
-	row := s.db.QueryRow(
+func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
+	row := s.db.QueryRowContext(
+		ctx,
 		`SELECT path, title, author, venue, year FROM metadata WHERE path = ?`,
 		path,
 	)
@@ -70,8 +73,8 @@ func (s *Store) Get(path string) (*Metadata, error) {
 	}
 }
 
-func (s *Store) Upsert(m *Metadata) error {
-	_, err := s.db.Exec(`
+func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
+	_, err := s.db.ExecContext(ctx, `
 INSERT INTO metadata (path, title, author, venue, year)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
@@ -89,28 +92,46 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) MovePath(oldPath, newPath string) error {
+func (s *Store) MovePath(ctx context.Context, oldPath, newPath string) error {
 	if oldPath == newPath {
 		return nil
 	}
-	_, err := s.db.Exec(`UPDATE metadata SET path = ? WHERE path = ?`, newPath, oldPath)
+	_, err := s.db.ExecContext(ctx, `UPDATE metadata SET path = ? WHERE path = ?`, newPath, oldPath)
 	return err
 }
 
-func (s *Store) MoveTree(oldDir, newDir string) error {
-	oldPrefix := ensureTrailingSlash(oldDir)
-	newPrefix := ensureTrailingSlash(newDir)
+func (s *Store) MoveTree(ctx context.Context, oldDir, newDir string) error {
+	oldPrefix, err := normalizeDirPrefix(oldDir)
+	if err != nil {
+		return err
+	}
+	newPrefix, err := normalizeDirPrefix(newDir)
+	if err != nil {
+		return err
+	}
 	if oldPrefix == newPrefix {
 		return nil
 	}
 	start := utf8.RuneCountInString(oldPrefix) + 1
-	pattern := oldPrefix + "%"
-	_, err := s.db.Exec(`
+	pattern := escapeLike(oldPrefix) + "%"
+	_, err = s.db.ExecContext(ctx, `
 UPDATE metadata
 SET path = ?1 || substr(path, ?2)
-WHERE path LIKE ?3
+WHERE path LIKE ?3 ESCAPE '\'
 `, newPrefix, start, pattern)
 	return err
+}
+
+func normalizeDirPrefix(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("path %q must not be empty", path)
+	}
+	return ensureTrailingSlash(cleaned), nil
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func ensureTrailingSlash(path string) string {

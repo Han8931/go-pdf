@@ -1,15 +1,19 @@
 package app
 
 import (
+	"context"
 	"io/fs"
 	"path/filepath"
 	"strings"
+	"time"
 
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"pdf-tui/internal/meta"
 )
+
+const statusMessageTTL = 4 * time.Second
 
 type uiState int
 
@@ -32,6 +36,8 @@ type Model struct {
 	selected map[string]bool
 	cut      []string
 	status   string
+	statusAt time.Time
+	sticky   bool
 
 	viewportStart  int
 	viewportHeight int
@@ -116,11 +122,12 @@ func (m *Model) updateCurrentMetadata(path string, isDir bool) {
 	if m.currentMetaPath == path {
 		return
 	}
-	md, err := m.meta.Get(path)
+	ctx := context.Background()
+	md, err := m.meta.Get(ctx, path)
 	if err != nil {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
-		m.status = "Failed to load metadata: " + err.Error()
+		m.setStatus("Failed to load metadata: " + err.Error())
 		return
 	}
 	m.currentMetaPath = path
@@ -149,6 +156,37 @@ func NewModel(root string, store *meta.Store) Model {
 
 func (m Model) Init() tea.Cmd {
 	return nil
+}
+
+func (m *Model) setStatus(msg string) {
+	m.status = msg
+	m.statusAt = time.Now()
+	m.sticky = false
+}
+
+func (m *Model) setPersistentStatus(msg string) {
+	m.status = msg
+	m.statusAt = time.Now()
+	m.sticky = true
+}
+
+func (m *Model) clearStatus() {
+	m.status = ""
+	m.statusAt = time.Time{}
+	m.sticky = false
+}
+
+func (m Model) statusMessage(now time.Time) string {
+	if m.status == "" {
+		return ""
+	}
+	if m.sticky || m.statusAt.IsZero() {
+		return m.status
+	}
+	if now.Sub(m.statusAt) > statusMessageTTL {
+		return ""
+	}
+	return m.status
 }
 
 func (m *Model) ensureCursorVisible() {

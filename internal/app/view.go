@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"pdf-tui/internal/meta"
 )
@@ -402,9 +403,9 @@ func (m Model) View() string {
 		b.WriteString("\n[j/k] move  [l/enter] enter/open  [h/backspace] up  [space] select  [d] cut  [p] paste  [a] mkdir  [r] rename  [e] edit meta  [D] delete  [q] quit\n")
 	}
 
-	if m.status != "" {
-		fmt.Fprintf(&b, "\n%s\n", m.status)
-	}
+	b.WriteString("\n")
+	b.WriteString(m.renderStatusBar())
+	b.WriteString("\n")
 
 	return b.String()
 }
@@ -427,4 +428,49 @@ func (m Model) metadataPreviewLines() []string {
 		lines = append(lines, fmt.Sprintf("%s: %s", metaFieldLabel(i), val))
 	}
 	return lines
+}
+
+func (m Model) renderStatusBar() string {
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+
+	dirInfo := fmt.Sprintf("Dir: %s", m.cwd)
+	itemInfo := m.selectionSummary()
+	status := m.statusMessage(time.Now())
+	if status == "" {
+		status = "Ready"
+	}
+
+	line := fmt.Sprintf(" %s │ %s │ %s ", dirInfo, itemInfo, status)
+	r := []rune(line)
+	if len(r) > width {
+		line = string(r[:width])
+	} else if len(r) < width {
+		line += strings.Repeat(" ", width-len(r))
+	}
+	return line
+}
+
+func (m Model) selectionSummary() string {
+	selectedCount := len(m.selected)
+	if len(m.entries) == 0 {
+		if selectedCount > 0 {
+			return fmt.Sprintf("Selected: %d", selectedCount)
+		}
+		return "No items"
+	}
+
+	entry := m.entries[m.cursor]
+	name := entry.Name()
+	if entry.IsDir() {
+		name += "/"
+	}
+
+	info := "Item: " + name
+	if selectedCount > 0 {
+		info += fmt.Sprintf("  Sel:%d", selectedCount)
+	}
+	return info
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,22 +42,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.SetValue("")
 
 				if name == "" {
-					m.status = "Directory name cannot be empty"
+					m.setStatus("Directory name cannot be empty")
 					return m, cmd
 				}
 				if strings.HasPrefix(name, ".") {
-					m.status = "Dot directories are hidden; choose another name"
+					m.setStatus("Dot directories are hidden; choose another name")
 					return m, cmd
 				}
 
 				dst := filepath.Join(m.cwd, name)
 				if _, err := os.Stat(dst); err == nil {
-					m.status = "Already exists"
+					m.setStatus("Already exists")
 					return m, cmd
 				}
 
 				if err := os.MkdirAll(dst, 0o755); err != nil {
-					m.status = "Failed: " + err.Error()
+					m.setStatus("Failed: " + err.Error())
 					return m, cmd
 				}
 
@@ -70,12 +71,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.ensureCursorVisible()
-				m.status = "Directory created"
+				m.setStatus("Directory created")
 				return m, cmd
 
 			case "esc":
 				m.state = stateNormal
-				m.status = "Cancelled"
+				m.setStatus("Cancelled")
 				m.input.SetValue("")
 				return m, cmd
 			}
@@ -100,12 +101,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.renameTarget = ""
 
 				if newName == "" {
-					m.status = "Name cannot be empty"
+					m.setStatus("Name cannot be empty")
 					return m, cmd
 				}
 
 				if strings.Contains(newName, "/") {
-					m.status = "Name cannot contain '/'"
+					m.setStatus("Name cannot contain '/'")
 					return m, cmd
 				}
 
@@ -113,12 +114,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newPath := filepath.Join(dir, newName)
 
 				if _, err := os.Stat(newPath); err == nil {
-					m.status = "Target already exists"
+					m.setStatus("Target already exists")
 					return m, cmd
 				}
 
 				if err := os.Rename(oldPath, newPath); err != nil {
-					m.status = "Rename failed: " + err.Error()
+					m.setStatus("Rename failed: " + err.Error())
 					return m, cmd
 				}
 
@@ -137,9 +138,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureCursorVisible()
 				m.updateTextPreview()
 				if metaErr != nil {
-					m.status = "Renamed, but metadata update failed: " + metaErr.Error()
+					m.setStatus("Renamed, but metadata update failed: " + metaErr.Error())
 				} else {
-					m.status = "Renamed"
+					m.setStatus("Renamed")
 				}
 				return m, cmd
 
@@ -147,7 +148,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.renameTarget = ""
-				m.status = "Rename cancelled"
+				m.setStatus("Rename cancelled")
 				return m, cmd
 			}
 
@@ -164,12 +165,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.metaFieldIndex = 0
 				m.loadMetaFieldIntoInput()
 				m.input.Focus()
-				m.status = metaEditStatus(m.metaFieldIndex)
+				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
 				return m, nil
 			case "esc":
 				m.state = stateNormal
 				m.metaEditingPath = ""
-				m.status = "Metadata edit cancelled"
+				m.setStatus("Metadata edit cancelled")
 				return m, nil
 			}
 			return m, nil
@@ -189,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.metaFieldIndex++
 				}
 				m.loadMetaFieldIntoInput()
-				m.status = metaEditStatus(m.metaFieldIndex)
+				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
 				return m, cmd
 
 			case "shift+tab":
@@ -199,7 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.metaFieldIndex--
 				}
 				m.loadMetaFieldIntoInput()
-				m.status = metaEditStatus(m.metaFieldIndex)
+				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
 				return m, cmd
 
 			case "enter":
@@ -209,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.metaFieldIndex < metaFieldCount()-1 {
 					m.metaFieldIndex++
 					m.loadMetaFieldIntoInput()
-					m.status = metaEditStatus(m.metaFieldIndex)
+					m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
 					return m, cmd
 				}
 
@@ -217,16 +218,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.metaDraft.Path = m.metaEditingPath
 				}
 				if m.meta != nil {
-					if err := m.meta.Upsert(&m.metaDraft); err != nil {
-						m.status = "Failed to save metadata: " + err.Error()
+					ctx := context.Background()
+					if err := m.meta.Upsert(ctx, &m.metaDraft); err != nil {
+						m.setStatus("Failed to save metadata: " + err.Error())
 					} else {
-						m.status = "Metadata saved"
+						m.setStatus("Metadata saved")
 						m.currentMetaPath = ""
 						m.updateCurrentMetadata(m.metaDraft.Path, false)
 						m.updateTextPreview()
 					}
 				} else {
-					m.status = "Metadata store not available"
+					m.setStatus("Metadata store not available")
 				}
 				m.state = stateNormal
 				m.input.SetValue("")
@@ -237,7 +239,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.metaEditingPath = ""
-				m.status = "Metadata edit cancelled"
+				m.setStatus("Metadata edit cancelled")
 				return m, cmd
 			}
 
@@ -268,11 +270,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadEntries()
 
 				if deleted > 0 {
-					m.status = fmt.Sprintf("Deleted %d item(s).", deleted)
+					m.setStatus(fmt.Sprintf("Deleted %d item(s).", deleted))
 				} else if lastErr != nil {
-					m.status = "Delete failed: " + lastErr.Error()
+					m.setStatus("Delete failed: " + lastErr.Error())
 				} else {
-					m.status = "Nothing deleted"
+					m.setStatus("Nothing deleted")
 				}
 
 				return m, nil
@@ -280,7 +282,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "n", "N", "esc":
 				m.state = stateNormal
 				m.confirmItems = nil
-				m.status = "Deletion cancelled"
+				m.setStatus("Deletion cancelled")
 				return m, nil
 			}
 		}
@@ -344,25 +346,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if entry.IsDir() {
 				m.cwd = full
 				m.loadEntries()
-				m.status = ""
+				m.clearStatus()
 				m.updateTextPreview() // <── NEW
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
 				_ = exec.Command("zathura", full).Start()
 			} else {
-				m.status = "Not a PDF"
+				m.setStatus("Not a PDF")
 			}
 
 		case "h", "backspace":
 			parent := filepath.Dir(m.cwd)
 
 			if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
-				m.status = "Already at root"
+				m.setStatus("Already at root")
 				return m, nil
 			}
 
 			m.cwd = parent
 			m.loadEntries()
-			m.status = ""
+			m.clearStatus()
 			m.updateTextPreview() // <── NEW
 
 		case " ":
@@ -390,7 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			targets := m.selectionOrCurrent()
 			if len(targets) == 0 {
-				m.status = "Nothing to cut"
+				m.setStatus("Nothing to cut")
 				return m, nil
 			}
 
@@ -399,11 +401,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(m.selected, t)
 			}
 
-			m.status = fmt.Sprintf("Cut %d item(s). Paste with 'p'.", len(targets))
+			m.setStatus(fmt.Sprintf("Cut %d item(s). Paste with 'p'.", len(targets)))
 
 		case "p":
 			if len(m.cut) == 0 {
-				m.status = "Cut buffer empty"
+				m.setStatus("Cut buffer empty")
 				return m, nil
 			}
 
@@ -438,20 +440,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateTextPreview()
 
 			if moved > 0 {
-				m.status = fmt.Sprintf("Moved %d item(s).", moved)
+				msg := fmt.Sprintf("Moved %d item(s).", moved)
 				if metaErr != nil {
-					m.status += " Metadata update failed: " + metaErr.Error()
+					msg += " Metadata update failed: " + metaErr.Error()
 				}
+				m.setStatus(msg)
 			} else if lastErr != nil {
-				m.status = "Move failed: " + lastErr.Error()
+				m.setStatus("Move failed: " + lastErr.Error())
 			} else if metaErr != nil {
-				m.status = "Metadata update failed: " + metaErr.Error()
+				m.setStatus("Metadata update failed: " + metaErr.Error())
 			}
 
 		case "D":
 			targets := m.selectionOrCurrent()
 			if len(targets) == 0 {
-				m.status = "Nothing to delete"
+				m.setStatus("Nothing to delete")
 				return m, nil
 			}
 
@@ -459,14 +462,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateConfirmDelete
 
 			if len(targets) == 1 {
-				m.status = fmt.Sprintf("Delete '%s'? (y/N)", filepath.Base(targets[0]))
+				m.setStatus(fmt.Sprintf("Delete '%s'? (y/N)", filepath.Base(targets[0])))
 			} else {
-				m.status = fmt.Sprintf("Delete %d items? (y/N)", len(targets))
+				m.setStatus(fmt.Sprintf("Delete %d items? (y/N)", len(targets)))
 			}
 
 		case "r":
 			if len(m.entries) == 0 {
-				m.status = "Nothing to rename"
+				m.setStatus("Nothing to rename")
 				return m, nil
 			}
 
@@ -474,7 +477,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			full := filepath.Join(m.cwd, entry.Name())
 
 			if !entry.IsDir() {
-				m.status = "Not a directory"
+				m.setStatus("Not a directory")
 				return m, nil
 			}
 
@@ -483,17 +486,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetValue(entry.Name())
 			m.input.CursorEnd() // put cursor at end
 			m.input.Focus()
-			m.status = "Rename: edit name and press Enter"
+			m.setPersistentStatus("Rename: edit name and press Enter")
 			return m, nil
 
 		case "a":
 			m.state = stateNewDir
 			m.input.SetValue("")
-			m.status = "New directory: type name and press Enter"
+			m.setPersistentStatus("New directory: type name and press Enter")
 
 		case "e":
 			if len(m.entries) == 0 {
-				m.status = "Nothing to edit"
+				m.setStatus("Nothing to edit")
 				return m, nil
 			}
 
@@ -502,7 +505,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// For now: only files (skip dirs)
 			if entry.IsDir() {
-				m.status = "Metadata editing is for files only"
+				m.setStatus("Metadata editing is for files only")
 				return m, nil
 			}
 
@@ -512,9 +515,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// load existing metadata if present
 			draft := meta.Metadata{Path: full}
 			if m.meta != nil {
-				existing, err := m.meta.Get(full)
+				ctx := context.Background()
+				existing, err := m.meta.Get(ctx, full)
 				if err != nil {
-					m.status = "Failed to load metadata: " + err.Error()
+					m.setStatus("Failed to load metadata: " + err.Error())
 				} else if existing != nil {
 					draft = *existing
 				}
@@ -523,7 +527,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.metaFieldIndex = 0
 			m.input.SetValue("")
 			m.input.Blur()
-			m.status = "Metadata preview: press 'e' again to edit (Esc to cancel)"
+			m.setPersistentStatus("Metadata preview: press 'e' again to edit (Esc to cancel)")
 			return m, nil
 
 		}
@@ -544,11 +548,12 @@ func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
 	if m.meta == nil {
 		return nil
 	}
+	ctx := context.Background()
 	if isDir {
-		if err := m.meta.MoveTree(oldPath, newPath); err != nil {
+		if err := m.meta.MoveTree(ctx, oldPath, newPath); err != nil {
 			return err
 		}
-		return m.meta.MovePath(oldPath, newPath)
+		return m.meta.MovePath(ctx, oldPath, newPath)
 	}
-	return m.meta.MovePath(oldPath, newPath)
+	return m.meta.MovePath(ctx, oldPath, newPath)
 }
