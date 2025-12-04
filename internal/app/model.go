@@ -24,6 +24,7 @@ const (
 	stateRename
 	stateMetaPreview
 	stateEditMeta
+	stateCommand
 )
 
 type Model struct {
@@ -33,11 +34,12 @@ type Model struct {
 	cursor  int
 	err     error
 
-	selected map[string]bool
-	cut      []string
-	status   string
-	statusAt time.Time
-	sticky   bool
+	selected      map[string]bool
+	cut           []string
+	status        string
+	statusAt      time.Time
+	sticky        bool
+	commandOutput []string
 
 	viewportStart  int
 	viewportHeight int
@@ -187,6 +189,14 @@ func (m Model) statusMessage(now time.Time) string {
 		return ""
 	}
 	return m.status
+}
+
+func (m *Model) setCommandOutput(lines []string) {
+	m.commandOutput = append([]string{}, lines...)
+}
+
+func (m *Model) clearCommandOutput() {
+	m.commandOutput = nil
 }
 
 func (m *Model) ensureCursorVisible() {

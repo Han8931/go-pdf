@@ -399,13 +399,22 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		b.WriteString(m.renderMetaPopup())
 		b.WriteString("\n")
-	} else {
-		b.WriteString("\n[j/k] move  [l/enter] enter/open  [h/backspace] up  [space] select  [d] cut  [p] paste  [a] mkdir  [r] rename  [e] edit meta  [D] delete  [q] quit\n")
 	}
-
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusBar())
 	b.WriteString("\n")
+	if m.state == stateCommand {
+		fmt.Fprintf(&b, "Command: %s\n", m.input.View())
+	}
+	if len(m.commandOutput) > 0 {
+		lines := m.commandOutput
+		if m.width > 0 {
+			lines = trimLinesToWidth(lines, m.width)
+		}
+		for _, line := range lines {
+			b.WriteString(line + "\n")
+		}
+	}
 
 	return b.String()
 }

@@ -28,6 +28,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
+		if m.state != stateCommand && len(m.commandOutput) > 0 {
+			m.clearCommandOutput()
+		}
+
 		// ===========================
 		//  NEW DIRECTORY MODE
 		// ===========================
@@ -244,6 +248,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, cmd
+		}
+
+		// ===========================
+		//  COMMAND MODE
+		// ===========================
+		if m.state == stateCommand {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+
+			switch key {
+			case "enter":
+				line := m.input.Value()
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+				cmd := m.runCommand(line)
+				return m, tea.Batch(inputCmd, cmd)
+			case "esc":
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+				m.setStatus("Command cancelled")
+				return m, inputCmd
+			default:
+				return m, inputCmd
+			}
 		}
 
 		// ===========================
@@ -530,6 +560,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setPersistentStatus("Metadata preview: press 'e' again to edit (Esc to cancel)")
 			return m, nil
 
+		case ":":
+			m.state = stateCommand
+			m.input.SetValue(":")
+			m.input.CursorEnd()
+			m.input.Focus()
+			m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
+			return m, nil
+
 		}
 	}
 
@@ -556,4 +594,57 @@ func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
 		return m.meta.MovePath(ctx, oldPath, newPath)
 	}
 	return m.meta.MovePath(ctx, oldPath, newPath)
+}
+
+func (m *Model) runCommand(raw string) tea.Cmd {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		m.setStatus("No command entered")
+		return nil
+	}
+	if strings.HasPrefix(text, ":") {
+		text = strings.TrimSpace(text[1:])
+	}
+	if text == "" {
+		m.setStatus("No command entered")
+		return nil
+	}
+
+	fields := strings.Fields(text)
+	cmd := strings.ToLower(fields[0])
+	args := fields[1:]
+
+	switch cmd {
+	case "h", "help":
+		help := []string{
+			"Command Help:",
+			"  Navigation : j/k move, h up, l enter",
+			"  Selection  : space toggle, d cut, p paste",
+			"  Files      : a mkdir, r rename dir, D delete",
+			"  Metadata   : e preview/edit metadata",
+			"  Commands   : :h help, :pwd show directory, :clear hide this pane, :q quit",
+		}
+		m.setCommandOutput(help)
+		m.setPersistentStatus("Help displayed (use :clear to hide)")
+	case "pwd":
+		output := []string{
+			"Current directory:",
+			"  " + m.cwd,
+		}
+		m.setCommandOutput(output)
+		m.setStatus("Printed working directory")
+	case "clear":
+		m.clearCommandOutput()
+		m.setStatus("Command output cleared")
+	case "q", "quit":
+		m.setStatus("Quitting...")
+		return tea.Quit
+	default:
+		if len(args) > 0 {
+			m.setStatus(fmt.Sprintf("Unknown command: %s (args: %s)", cmd, strings.Join(args, " ")))
+		} else {
+			m.setStatus(fmt.Sprintf("Unknown command: %s", cmd))
+		}
+	}
+	return nil
 }
