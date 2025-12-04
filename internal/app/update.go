@@ -230,6 +230,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.currentMetaPath = ""
 						m.updateCurrentMetadata(m.metaDraft.Path, false)
 						m.updateTextPreview()
+						m.refreshEntryTitles()
 					}
 				} else {
 					m.setStatus("Metadata store not available")

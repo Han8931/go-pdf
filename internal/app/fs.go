@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -50,6 +51,7 @@ func (m *Model) loadEntries() {
 		m.cursor = 0
 	}
 	m.ensureCursorVisible()
+	m.refreshEntryTitles()
 }
 
 func (m *Model) removeFromCut(path string) {
@@ -91,4 +93,40 @@ func avoidNameClash(dst string) string {
 			return cand
 		}
 	}
+}
+
+func (m *Model) refreshEntryTitles() {
+	if m.entryTitles == nil {
+		m.entryTitles = make(map[string]string)
+	}
+	for k := range m.entryTitles {
+		delete(m.entryTitles, k)
+	}
+
+	ctx := context.Background()
+	for _, e := range m.entries {
+		full := filepath.Join(m.cwd, e.Name())
+		m.entryTitles[full] = m.resolveEntryTitle(ctx, full, e)
+	}
+}
+
+func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs.DirEntry) string {
+	if entry.IsDir() {
+		return entry.Name() + "/"
+	}
+
+	name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+	if m.meta == nil {
+		return name
+	}
+
+	md, err := m.meta.Get(ctx, fullPath)
+	if err != nil || md == nil {
+		return name
+	}
+	title := strings.TrimSpace(md.Title)
+	if title == "" {
+		return name
+	}
+	return title
 }

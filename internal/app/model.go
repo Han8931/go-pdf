@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,6 +43,7 @@ type Model struct {
 	statusAt      time.Time
 	sticky        bool
 	commandOutput []string
+	entryTitles   map[string]string
 
 	viewportStart  int
 	viewportHeight int
@@ -150,6 +154,7 @@ func NewModel(root string, store *meta.Store) Model {
 		input:          ti,
 		viewportHeight: 20,
 		meta:           store,
+		entryTitles:    make(map[string]string),
 	}
 	m.loadEntries()
 	m.updateTextPreview()
@@ -224,13 +229,10 @@ func (m *Model) updateTextPreview() {
 	full := filepath.Join(m.cwd, e.Name())
 	m.updateCurrentMetadata(full, e.IsDir())
 
-	// Directories: simple info
+	// Directories: show summary and contents
 	if e.IsDir() {
 		m.previewPath = full
-		m.previewText = []string{
-			"Directory:",
-			"  " + e.Name() + "/",
-		}
+		m.previewText = m.directoryPreviewContents(full)
 		return
 	}
 
@@ -268,4 +270,54 @@ func (m *Model) updateTextPreview() {
 	}
 
 	m.previewText = lines
+}
+
+func (m *Model) directoryPreviewContents(dir string) []string {
+	base := filepath.Base(dir)
+	lines := []string{fmt.Sprintf("%s/", base)}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		lines = append(lines, "  (error: "+err.Error()+")")
+		return lines
+	}
+
+	filtered := make([]os.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		di, dj := filtered[i].IsDir(), filtered[j].IsDir()
+		if di != dj {
+			return di && !dj
+		}
+		return strings.ToLower(filtered[i].Name()) < strings.ToLower(filtered[j].Name())
+	})
+
+	if len(filtered) == 0 {
+		lines = append(lines, "(empty)")
+		return lines
+	}
+
+	maxLines := m.viewportHeight - 6
+	if maxLines < 5 {
+		maxLines = 5
+	}
+	if maxLines > len(filtered) {
+		maxLines = len(filtered)
+	}
+	for i := 0; i < maxLines; i++ {
+		name := filtered[i].Name()
+		if filtered[i].IsDir() {
+			name += "/"
+		}
+		lines = append(lines, "  "+name)
+	}
+	if maxLines < len(filtered) {
+		lines = append(lines, fmt.Sprintf("  ... %d more", len(filtered)-maxLines))
+	}
+	return lines
 }

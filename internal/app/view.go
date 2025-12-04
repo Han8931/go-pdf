@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -129,11 +130,8 @@ func (m Model) renderListPanel(width, height int) []string {
 
 		var line string
 
-		if e.IsDir() {
-			line = fmt.Sprintf("%s%s %s/", cursor, sel, e.Name())
-		} else {
-			line = fmt.Sprintf("%s%s %s", cursor, sel, e.Name())
-		}
+		display := m.entryDisplayName(full, e)
+		line = fmt.Sprintf("%s%s %s", cursor, sel, display)
 
 		lines = append(lines, line)
 	}
@@ -142,49 +140,68 @@ func (m Model) renderListPanel(width, height int) []string {
 }
 
 func (m Model) renderPreviewPanel(width, height int) []string {
-	lines := []string{"[Preview]"}
+	if height <= 0 {
+		return nil
+	}
 
-	if len(m.entries) == 0 {
-		lines = append(lines, "", "No selection")
-		lines = trimLinesToWidth(lines, width)
+	metaSection := m.metadataPanelLines(width)
+	previewSection := m.previewPanelLines(width)
+
+	lines := make([]string, 0, height)
+	appendSection := func(section []string) {
+		for _, line := range section {
+			if len(lines) >= height {
+				return
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	if len(metaSection) == 0 {
+		if len(previewSection) > height {
+			previewSection = previewSection[:height]
+		}
+		appendSection(previewSection)
 		return fitLines(lines, height)
 	}
 
-	if metaLines := m.metadataPreviewLines(); len(metaLines) > 0 {
-		lines = append(lines, "", "Metadata:")
-		lines = append(lines, metaLines...)
+	reservedMeta := height / 3
+	if reservedMeta < 6 {
+		if height >= 6 {
+			reservedMeta = 6
+		} else if height > 2 {
+			reservedMeta = height / 2
+		} else {
+			reservedMeta = height
+		}
+	}
+	if reservedMeta > height {
+		reservedMeta = height
 	}
 
-	if len(m.previewText) > 0 {
-		lines = append(lines, "") // blank after header
+	previewLimit := height - reservedMeta
+	if previewLimit < 0 {
+		previewLimit = 0
+	}
+	if previewLimit > len(previewSection) {
+		previewLimit = len(previewSection)
+	}
+	appendSection(previewSection[:previewLimit])
 
-		// 1) start with the raw previewText
-		preview := make([]string, len(m.previewText))
-		copy(preview, m.previewText)
-
-		// 2) trim horizontally to the panel width
-		preview = trimLinesToWidth(preview, width)
-		// preview = wrapLinesToWidth(preview, width)
-
-		// 3) append and clamp vertically
-		lines = append(lines, preview...)
-		lines = trimLinesToWidth(lines, width)
-		return fitLines(lines, height)
+	if previewLimit > 0 && len(lines) < height {
+		lines = append(lines, dividerLine(width))
 	}
 
-	// Fallback: basic info if no previewText set
-	e := m.entries[m.cursor]
-	full := filepath.Join(m.cwd, e.Name())
-
-	lines = append(lines, "")
-	if e.IsDir() {
-		lines = append(lines, "Directory:", "  "+e.Name()+"/")
-	} else {
-		lines = append(lines, "File:", "  "+e.Name())
-		lines = append(lines, "", "Path:", "  "+full)
+	remaining := height - len(lines)
+	if remaining < 0 {
+		remaining = 0
 	}
+	metaCount := len(metaSection)
+	if metaCount > remaining {
+		metaCount = remaining
+	}
+	appendSection(metaSection[:metaCount])
 
-	lines = trimLinesToWidth(lines, width)
 	return fitLines(lines, height)
 }
 
@@ -482,4 +499,65 @@ func (m Model) selectionSummary() string {
 		info += fmt.Sprintf("  Sel:%d", selectedCount)
 	}
 	return info
+}
+
+func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
+	if title, ok := m.entryTitles[full]; ok && title != "" {
+		return title
+	}
+	if entry.IsDir() {
+		return entry.Name() + "/"
+	}
+	name := entry.Name()
+	ext := filepath.Ext(name)
+	return strings.TrimSuffix(name, ext)
+}
+
+func (m Model) metadataPanelLines(width int) []string {
+	metaLines := m.metadataPreviewLines()
+	if len(metaLines) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(metaLines)+1)
+	lines = append(lines, "Metadata:")
+	lines = append(lines, metaLines...)
+	return trimLinesToWidth(lines, width)
+}
+
+func (m Model) previewPanelLines(width int) []string {
+	lines := []string{}
+
+	if len(m.entries) == 0 {
+		return trimLinesToWidth([]string{"No selection"}, width)
+	}
+
+	if len(m.previewText) > 0 {
+		preview := make([]string, len(m.previewText))
+		copy(preview, m.previewText)
+		return trimLinesToWidth(preview, width)
+	}
+
+	e := m.entries[m.cursor]
+	full := filepath.Join(m.cwd, e.Name())
+	display := m.entryDisplayName(full, e)
+
+	if e.IsDir() {
+		lines = append(lines, display)
+	} else {
+		lines = append(lines,
+			"File:",
+			"  "+display,
+			"",
+			"Path:",
+			"  "+full,
+		)
+	}
+	return trimLinesToWidth(lines, width)
+}
+
+func dividerLine(width int) string {
+	if width <= 0 {
+		width = 40
+	}
+	return strings.Repeat("─", width)
 }
