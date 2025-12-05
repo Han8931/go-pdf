@@ -161,8 +161,12 @@ func NewModel(root string, store *meta.Store) Model {
 	return m
 }
 
+// func (m Model) Init() tea.Cmd {
+// 	return nil
+// }
+
 func (m Model) Init() tea.Cmd {
-	return nil
+    return textinput.Blink
 }
 
 func (m *Model) setStatus(msg string) {

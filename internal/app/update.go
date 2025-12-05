@@ -523,6 +523,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			m.state = stateNewDir
 			m.input.SetValue("")
+			m.input.CursorEnd() 
+			m.input.Focus()
 			m.setPersistentStatus("New directory: type name and press Enter")
 
 		case "e":
