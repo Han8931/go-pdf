@@ -144,25 +144,26 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		return nil
 	}
 
-	metaSection := m.metadataPanelLines(width)
-	previewSection := m.previewPanelLines(width)
-
-	lines := make([]string, 0, height)
-	appendSection := func(section []string) {
-		for _, line := range section {
-			if len(lines) >= height {
-				return
-			}
-			lines = append(lines, line)
+	showMetadataOnly := false
+	if len(m.entries) > 0 {
+		entry := m.entries[m.cursor]
+		if !entry.IsDir() {
+			full := filepath.Join(m.cwd, entry.Name())
+			showMetadataOnly = full == m.currentMetaPath && m.currentMeta != nil
 		}
 	}
 
+	metaSection := m.metadataPanelLines(width)
+	if showMetadataOnly && len(metaSection) > 0 {
+		return fitLines(metaSection, height)
+	}
+
+	previewSection := m.previewPanelLines(width)
 	if len(metaSection) == 0 {
 		if len(previewSection) > height {
 			previewSection = previewSection[:height]
 		}
-		appendSection(previewSection)
-		return fitLines(lines, height)
+		return fitLines(previewSection, height)
 	}
 
 	reservedMeta := height / 3
@@ -186,8 +187,18 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 	if previewLimit > len(previewSection) {
 		previewLimit = len(previewSection)
 	}
-	appendSection(previewSection[:previewLimit])
 
+	lines := make([]string, 0, height)
+	appendSection := func(section []string) {
+		for _, line := range section {
+			if len(lines) >= height {
+				return
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	appendSection(previewSection[:previewLimit])
 	if previewLimit > 0 && len(lines) < height {
 		lines = append(lines, dividerLine(width))
 	}
@@ -240,7 +251,50 @@ func trimLinesToWidth(lines []string, width int) []string {
 	return out
 }
 
-func (m Model) renderMetaPopup() string {
+func wrapTextToWidth(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	var lines []string
+	current := ""
+	appendCurrent := func() {
+		if current != "" {
+			lines = append(lines, current)
+			current = ""
+		}
+	}
+	for _, word := range words {
+		wordRunes := []rune(word)
+		if runeLen(word) > width {
+			appendCurrent()
+			for len(wordRunes) > width {
+				lines = append(lines, string(wordRunes[:width]))
+				wordRunes = wordRunes[width:]
+			}
+			current = string(wordRunes)
+			continue
+		}
+		if current == "" {
+			current = word
+			continue
+		}
+		candidate := current + " " + word
+		if runeLen(candidate) > width {
+			lines = append(lines, current)
+			current = word
+		} else {
+			current = candidate
+		}
+	}
+	appendCurrent()
+	return lines
+}
+
+func (m Model) renderMetaPopupLines(width int) []string {
 	label := metaFieldLabel(m.metaFieldIndex)
 	if label == "" {
 		label = "Field"
@@ -288,7 +342,12 @@ func (m Model) renderMetaPopup() string {
 		)
 	}
 
-	return renderPopupBox("Metadata Editor", popupLines, m.width)
+	box := renderPopupBox("Metadata Editor", popupLines, width)
+	box = strings.TrimRight(box, "\n")
+	if box == "" {
+		return nil
+	}
+	return strings.Split(box, "\n")
 }
 
 func renderPopupBox(title string, lines []string, totalWidth int) string {
@@ -346,6 +405,7 @@ func runeLen(s string) int {
 
 func (m Model) View() string {
 	var b strings.Builder
+	var overlayLines []string
 
 	// Header (full width)
 	fmt.Fprintf(&b, "Dir : %s\n\n", m.cwd)
@@ -383,13 +443,22 @@ func (m Model) View() string {
 		listLines := m.renderListPanel(middleWidth, height)
 		prevLines := m.renderPreviewPanel(rightWidth, height)
 
+		if m.state == stateEditMeta || m.state == stateMetaPreview {
+			overlayLines = m.renderMetaPopupLines(middleWidth)
+			if len(overlayLines) > 0 {
+				overlayLines = trimLinesToWidth(overlayLines, middleWidth)
+			}
+		}
+
 		for i := 0; i < height; i++ {
 			tl := ""
 			if i < len(treeLines) {
 				tl = treeLines[i]
 			}
 			ll := ""
-			if i < len(listLines) {
+			if len(overlayLines) > 0 && i < len(overlayLines) {
+				ll = overlayLines[i]
+			} else if i < len(listLines) {
 				ll = listLines[i]
 			}
 			pl := ""
@@ -412,10 +481,6 @@ func (m Model) View() string {
 		fmt.Fprintf(&b, "\nCreate directory: %s\n", m.input.View())
 	} else if m.state == stateRename {
 		fmt.Fprintf(&b, "\nRename: %s\n", m.input.View())
-	} else if m.state == stateEditMeta || m.state == stateMetaPreview {
-		b.WriteString("\n")
-		b.WriteString(m.renderMetaPopup())
-		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusBar())
@@ -436,7 +501,7 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) metadataPreviewLines() []string {
+func (m Model) metadataPreviewLines(width int) []string {
 	if m.meta == nil || m.currentMetaPath == "" {
 		return nil
 	}
@@ -445,13 +510,27 @@ func (m Model) metadataPreviewLines() []string {
 		md = *m.currentMeta
 	}
 	md.Path = m.currentMetaPath
-	lines := make([]string, 0, metaFieldCount())
+	lines := make([]string, 0, metaFieldCount()+1)
+	lines = append(lines, "Metadata:")
 	for i := 0; i < metaFieldCount(); i++ {
 		val := strings.TrimSpace(metadataFieldValue(md, i))
 		if val == "" {
 			val = "(empty)"
 		}
-		lines = append(lines, fmt.Sprintf("%s: %s", metaFieldLabel(i), val))
+		label := metaFieldLabel(i)
+		if strings.EqualFold(label, "Abstract") {
+			lines = append(lines, label+":")
+			offsetWidth := width - 2
+			if offsetWidth < 10 {
+				offsetWidth = width
+			}
+			wrapped := wrapTextToWidth(val, offsetWidth)
+			for _, w := range wrapped {
+				lines = append(lines, "  "+w)
+			}
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", label, val))
 	}
 	return lines
 }
@@ -514,14 +593,11 @@ func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
 }
 
 func (m Model) metadataPanelLines(width int) []string {
-	metaLines := m.metadataPreviewLines()
+	metaLines := m.metadataPreviewLines(width)
 	if len(metaLines) == 0 {
 		return nil
 	}
-	lines := make([]string, 0, len(metaLines)+1)
-	lines = append(lines, "Metadata:")
-	lines = append(lines, metaLines...)
-	return trimLinesToWidth(lines, width)
+	return trimLinesToWidth(metaLines, width)
 }
 
 func (m Model) previewPanelLines(width int) []string {

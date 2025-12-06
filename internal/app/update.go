@@ -6,16 +6,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pdf-tui/internal/arxiv"
 	"pdf-tui/internal/config"
 	"pdf-tui/internal/meta"
 )
 
 type configEditFinishedMsg struct {
 	err error
+}
+
+type arxivUpdateMsg struct {
+	arxivID      string
+	updatedPaths []string
+	err          error
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -35,6 +45,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Config edit failed: " + msg.err.Error())
 		} else {
 			m.setStatus("Config edit finished")
+		}
+		return m, nil
+
+	case arxivUpdateMsg:
+		if msg.err != nil {
+			m.setStatus("arXiv import failed: " + msg.err.Error())
+			return m, nil
+		}
+		if len(msg.updatedPaths) > 0 {
+			m.refreshEntryTitles()
+			var current string
+			if len(m.entries) > 0 {
+				entry := m.entries[m.cursor]
+				current = filepath.Join(m.cwd, entry.Name())
+			}
+			for _, path := range msg.updatedPaths {
+				if m.currentMetaPath == path {
+					m.currentMetaPath = ""
+					m.updateCurrentMetadata(path, false)
+				}
+				if current != "" && path == current {
+					m.updateTextPreview()
+				}
+			}
+		}
+		count := len(msg.updatedPaths)
+		if count == 0 {
+			m.setStatus("arXiv import completed, but no files were updated")
+		} else {
+			m.setStatus(fmt.Sprintf("arXiv %s metadata applied to %d file(s)", msg.arxivID, count))
 		}
 		return m, nil
 
@@ -268,6 +308,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//  COMMAND MODE
 		// ===========================
 		if m.state == stateCommand {
+			if key == "tab" {
+				if m.handleCommandAutocomplete() {
+					return m, nil
+				}
+			}
 			var inputCmd tea.Cmd
 			m.input, inputCmd = m.input.Update(msg)
 
@@ -637,7 +682,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit metadata",
+			"  Metadata   : e preview/edit metadata, :arxiv <id> [files...] fetch from arXiv",
 			"  Config     : :config shows/edits the config file",
 			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
@@ -655,6 +700,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		m.setStatus("Command output cleared")
 	case "config":
 		return m.handleConfigCommand(args)
+	case "arxiv":
+		return m.handleArxivCommand(args)
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit
@@ -709,4 +756,297 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
 		return nil
 	}
+}
+
+func (m *Model) handleArxivCommand(args []string) tea.Cmd {
+	if m.meta == nil {
+		m.setStatus("Metadata store not available")
+		return nil
+	}
+	if len(args) == 0 {
+		m.setStatus("Usage: :arxiv <arxiv-id> [files...]")
+		return nil
+	}
+	id := args[0]
+	var files []string
+	if len(args) > 1 {
+		fileArgs := args[1:]
+		files = make([]string, 0, len(fileArgs))
+		for _, spec := range fileArgs {
+			spec = strings.TrimSpace(spec)
+			if spec == "" {
+				continue
+			}
+			resolved, err := m.resolveCommandFilePath(spec)
+			if err != nil {
+				m.setStatus(err.Error())
+				return nil
+			}
+			files = append(files, resolved)
+		}
+	} else {
+		targets := m.selectionOrCurrent()
+		if len(targets) == 0 {
+			m.setStatus("No files selected")
+			return nil
+		}
+		files = make([]string, 0, len(targets))
+		for _, path := range targets {
+			info, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			if info.IsDir() {
+				continue
+			}
+			files = append(files, path)
+		}
+	}
+	if len(files) == 0 {
+		m.setStatus("arXiv import works on files only; specify or select at least one PDF")
+		return nil
+	}
+	files = uniquePaths(files)
+	m.setPersistentStatus(fmt.Sprintf("Fetching arXiv %s for %d file(s)...", id, len(files)))
+	return m.fetchArxivMetadata(id, files)
+}
+
+func (m *Model) fetchArxivMetadata(id string, files []string) tea.Cmd {
+	store := m.meta
+	paths := append([]string{}, files...)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+
+		metadata, err := arxiv.Fetch(ctx, id)
+		if err != nil {
+			return arxivUpdateMsg{err: err}
+		}
+
+		authorStr := strings.Join(metadata.Authors, ", ")
+		yearStr := ""
+		if metadata.Year > 0 {
+			yearStr = strconv.Itoa(metadata.Year)
+		}
+
+		baseCtx := context.Background()
+		updated := make([]string, 0, len(paths))
+		for _, path := range paths {
+			existing, err := store.Get(baseCtx, path)
+			if err != nil {
+				return arxivUpdateMsg{err: fmt.Errorf("load metadata for %s: %w", filepath.Base(path), err)}
+			}
+			md := meta.Metadata{Path: path}
+			if existing != nil {
+				md = *existing
+			}
+			md.Title = metadata.Title
+			md.Author = authorStr
+			md.Year = yearStr
+			md.Abstract = metadata.Abstract
+			if err := store.Upsert(baseCtx, &md); err != nil {
+				return arxivUpdateMsg{err: fmt.Errorf("save metadata for %s: %w", filepath.Base(path), err)}
+			}
+			updated = append(updated, path)
+		}
+
+		return arxivUpdateMsg{arxivID: metadata.ID, updatedPaths: updated}
+	}
+}
+
+type pathCompletion struct {
+	value string
+	isDir bool
+}
+
+func (m *Model) resolveCommandFilePath(spec string) (string, error) {
+	resolved := spec
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(m.cwd, spec)
+	}
+	resolved = filepath.Clean(resolved)
+	if !strings.HasPrefix(resolved, m.root) {
+		return "", fmt.Errorf("Path not under root: %s", spec)
+	}
+	info, err := os.Stat(resolved)
+	if err == nil {
+		if info.IsDir() {
+			return "", fmt.Errorf("Cannot fetch arXiv metadata for directory: %s", spec)
+		}
+		return resolved, nil
+	}
+	if filepath.Ext(resolved) != "" {
+		return "", fmt.Errorf("File not found: %s", spec)
+	}
+	dir := filepath.Dir(resolved)
+	base := filepath.Base(resolved)
+	entries, dirErr := os.ReadDir(dir)
+	if dirErr != nil {
+		return "", fmt.Errorf("File not found: %s", spec)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := filepath.Ext(name)
+		if !strings.EqualFold(ext, ".pdf") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSuffix(name, ext), base) {
+			full := filepath.Join(dir, name)
+			info, statErr := os.Stat(full)
+			if statErr == nil && !info.IsDir() {
+				return full, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("File not found: %s", spec)
+}
+
+func uniquePaths(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (m *Model) handleCommandAutocomplete() bool {
+	if m.state != stateCommand {
+		return false
+	}
+	value := m.input.Value()
+	runes := []rune(value)
+	cursor := m.input.Position()
+	if cursor != len(runes) {
+		return false
+	}
+	current := string(runes[:cursor])
+	trimmed := strings.TrimRight(current, " \t")
+	if !strings.ContainsAny(trimmed, " \t") {
+		return false
+	}
+	lastSep := strings.LastIndexAny(trimmed, " \t")
+	if lastSep == -1 || lastSep == len(trimmed)-1 {
+		return false
+	}
+	token := trimmed[lastSep+1:]
+	if token == "" {
+		return false
+	}
+	completions := m.commandPathCompletions(token)
+	if len(completions) == 0 {
+		m.setStatus("No completions")
+		return true
+	}
+	values := make([]string, len(completions))
+	for i, c := range completions {
+		values[i] = c.value
+	}
+	lcp := longestCommonPrefix(values)
+	if lcp == token {
+		lines := []string{"Completions:"}
+		for _, c := range completions {
+			lines = append(lines, "  "+c.value)
+		}
+		m.setCommandOutput(lines)
+		m.setPersistentStatus("Multiple completions (type more letters)")
+		return true
+	}
+	appendSpace := false
+	if len(completions) == 1 && lcp == completions[0].value && !completions[0].isDir {
+		appendSpace = true
+	}
+	prefix := trimmed[:lastSep+1]
+	newValue := prefix + lcp
+	if appendSpace {
+		newValue += " "
+	}
+	m.input.SetValue(newValue)
+	m.input.CursorEnd()
+	return true
+}
+
+func (m *Model) commandPathCompletions(token string) []pathCompletion {
+	if token == "" {
+		return nil
+	}
+	if filepath.IsAbs(token) {
+		return nil
+	}
+	dirPart, partial := filepath.Split(token)
+	searchDir := m.cwd
+	origDirPart := dirPart
+	if dirPart != "" {
+		candidate := filepath.Join(m.cwd, dirPart)
+		candidate = filepath.Clean(candidate)
+		if !strings.HasPrefix(candidate, m.root) {
+			return nil
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			return nil
+		}
+		searchDir = candidate
+	}
+	entries, err := os.ReadDir(searchDir)
+	if err != nil {
+		return nil
+	}
+	sep := string(os.PathSeparator)
+	comps := make([]pathCompletion, 0)
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, partial) {
+			continue
+		}
+		display := name
+		if !e.IsDir() {
+			ext := filepath.Ext(name)
+			if strings.EqualFold(ext, ".pdf") {
+				display = strings.TrimSuffix(name, ext)
+			}
+			if display == "" {
+				display = name
+			}
+		}
+		completion := display
+		if origDirPart != "" {
+			base := strings.TrimSuffix(origDirPart, sep)
+			if base == "" {
+				completion = display
+			} else {
+				completion = filepath.Join(base, display)
+			}
+		}
+		if e.IsDir() && !strings.HasSuffix(completion, sep) {
+			completion += sep
+		}
+		comps = append(comps, pathCompletion{value: completion, isDir: e.IsDir()})
+	}
+	sort.Slice(comps, func(i, j int) bool {
+		return comps[i].value < comps[j].value
+	})
+	return comps
+}
+
+func longestCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for !strings.HasPrefix(s, prefix) {
+			if prefix == "" {
+				return ""
+			}
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
 }
