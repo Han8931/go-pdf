@@ -9,13 +9,21 @@ import (
 )
 
 type Config struct {
-	WatchDir   string `json:"watch_dir"`
-	MetaDir    string `json:"meta_dir"`
-	RecentDir  string `json:"recent_dir,omitempty"`
-	RecentDays int    `json:"recent_days,omitempty"`
+	WatchDir            string `json:"watch_dir"`
+	MetaDir             string `json:"meta_dir"`
+	RecentlyAddedDir    string `json:"recent_dir,omitempty"` // keep legacy key for compatibility
+	RecentlyAddedDays   int    `json:"recent_days,omitempty"`
+	RecentlyOpenedDir   string `json:"recently_opened_dir,omitempty"`
+	RecentlyOpenedLimit int    `json:"recently_opened_limit,omitempty"`
 }
 
-const defaultRecentDays = 30
+const (
+	defaultRecentDays           = 30
+	defaultRecentlyOpenedLimit  = 20
+	legacyRecentDirName         = "_recent"
+	defaultRecentlyAddedDirName = "_recently_added"
+	defaultRecentlyOpenedName   = "_recently_opened"
+)
 
 func defaultConfigPath() (string, error) {
 	cfgHome := os.Getenv("XDG_CONFIG_HOME")
@@ -88,8 +96,16 @@ func LoadOrInit() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	recent := filepath.Join(watch, "_recent")
-	cfg := &Config{WatchDir: watch, MetaDir: meta, RecentDir: recent, RecentDays: defaultRecentDays}
+	recentAdded := filepath.Join(watch, defaultRecentlyAddedDirName)
+	recentOpened := filepath.Join(watch, defaultRecentlyOpenedName)
+	cfg := &Config{
+		WatchDir:            watch,
+		MetaDir:             meta,
+		RecentlyAddedDir:    recentAdded,
+		RecentlyAddedDays:   defaultRecentDays,
+		RecentlyOpenedDir:   recentOpened,
+		RecentlyOpenedLimit: defaultRecentlyOpenedLimit,
+	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
 	fmt.Printf("Edit %s to change these paths.\n", path)
@@ -100,7 +116,10 @@ func LoadOrInit() (*Config, error) {
 	if err := os.MkdirAll(cfg.MetaDir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(cfg.RecentDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.RecentlyAddedDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(cfg.RecentlyOpenedDir, 0o755); err != nil {
 		return nil, err
 	}
 
@@ -137,11 +156,37 @@ func (c *Config) ensureDefaults() error {
 		}
 		c.MetaDir = m
 	}
-	if strings.TrimSpace(c.RecentDir) == "" {
-		c.RecentDir = filepath.Join(c.WatchDir, "_recent")
+	if strings.TrimSpace(c.RecentlyAddedDir) == "" {
+		c.RecentlyAddedDir = filepath.Join(c.WatchDir, defaultRecentlyAddedDirName)
+	} else if isLegacyRecentPath(c.RecentlyAddedDir, c.WatchDir) {
+		c.RecentlyAddedDir = upgradeLegacyRecentPath(c.RecentlyAddedDir)
 	}
-	if c.RecentDays <= 0 {
-		c.RecentDays = defaultRecentDays
+	if c.RecentlyAddedDays <= 0 {
+		c.RecentlyAddedDays = defaultRecentDays
+	}
+	if strings.TrimSpace(c.RecentlyOpenedDir) == "" {
+		c.RecentlyOpenedDir = filepath.Join(c.WatchDir, defaultRecentlyOpenedName)
+	}
+	if c.RecentlyOpenedLimit <= 0 {
+		c.RecentlyOpenedLimit = defaultRecentlyOpenedLimit
 	}
 	return nil
+}
+
+func isLegacyRecentPath(path, watch string) bool {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	legacy := filepath.Clean(filepath.Join(watch, legacyRecentDirName))
+	return clean == legacy || filepath.Base(clean) == legacyRecentDirName
+}
+
+func upgradeLegacyRecentPath(path string) string {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "" {
+		return filepath.Join(".", defaultRecentlyAddedDirName)
+	}
+	dir := filepath.Dir(clean)
+	return filepath.Join(dir, defaultRecentlyAddedDirName)
 }

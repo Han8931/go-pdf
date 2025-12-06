@@ -12,8 +12,8 @@ import (
 )
 
 func (m *Model) loadEntries() {
-	if err := m.maybeSyncRecentDir(false); err != nil {
-		m.setStatus("Recent sync failed: " + err.Error())
+	if err := m.maybeSyncRecentlyAddedDir(false); err != nil {
+		m.setStatus("Recently added sync failed: " + err.Error())
 	}
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
@@ -94,7 +94,7 @@ func (m *Model) refreshEntryTitles() {
 	m.refreshEntryTitlesWithInfo(info)
 }
 
-func (m *Model) refreshEntryTitlesWithInfo(info map[string]entrySortInfo) {
+func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 	if m.entryTitles == nil {
 		m.entryTitles = make(map[string]string)
 	}
@@ -103,19 +103,28 @@ func (m *Model) refreshEntryTitlesWithInfo(info map[string]entrySortInfo) {
 	}
 
 	var ctx context.Context
-	useMeta := info == nil && m.meta != nil
+	useMeta := entryInfo == nil && m.meta != nil
 	if useMeta {
 		ctx = context.Background()
 	}
 
 	for _, e := range m.entries {
 		full := filepath.Join(m.cwd, e.Name())
-		if e.IsDir() {
-			m.entryTitles[full] = e.Name() + "/"
+		fileInfo, err := e.Info()
+		isDir := e.IsDir()
+		if err == nil {
+			isDir = fileInfo.IsDir()
+		}
+		if isDir {
+			name := e.Name()
+			if err == nil {
+				name = fileInfo.Name()
+			}
+			m.entryTitles[full] = name + "/"
 			continue
 		}
-		if info != nil {
-			if data, ok := info[full]; ok {
+		if entryInfo != nil {
+			if data, ok := entryInfo[full]; ok {
 				m.entryTitles[full] = data.display()
 				continue
 			}
@@ -130,16 +139,25 @@ func (m *Model) refreshEntryTitlesWithInfo(info map[string]entrySortInfo) {
 }
 
 func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs.DirEntry) string {
+	info, err := entry.Info()
+	if err == nil && info.IsDir() {
+		return info.Name() + "/"
+	}
 	if entry.IsDir() {
 		return entry.Name() + "/"
 	}
 
-	name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+	baseName := entry.Name()
+	if err == nil {
+		baseName = info.Name()
+	}
+	name := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	if m.meta == nil {
 		return fmt.Sprintf("[-][%s]", name)
 	}
 
-	md, err := m.meta.Get(ctx, fullPath)
+	path := canonicalPath(fullPath)
+	md, err := m.meta.Get(ctx, path)
 	if err != nil || md == nil {
 		return fmt.Sprintf("[-][%s]", name)
 	}
@@ -172,21 +190,31 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 	if len(entries) == 0 {
 		return nil
 	}
-	info := make(map[string]entrySortInfo, len(entries))
+	sortInfo := make(map[string]entrySortInfo, len(entries))
 	var ctx context.Context
 	useMeta := m.meta != nil
 	if useMeta {
 		ctx = context.Background()
 	}
 	for _, e := range entries {
-		if e.IsDir() {
+		info, err := e.Info()
+		isDir := e.IsDir()
+		if err == nil {
+			isDir = info.IsDir()
+		}
+		if isDir {
 			continue
 		}
 		full := filepath.Join(m.cwd, e.Name())
-		base := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		baseName := e.Name()
+		if err == nil {
+			baseName = info.Name()
+		}
+		base := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 		data := entrySortInfo{title: base}
 		if useMeta {
-			md, err := m.meta.Get(ctx, full)
+			path := canonicalPath(full)
+			md, err := m.meta.Get(ctx, path)
 			if err == nil && md != nil {
 				if t := strings.TrimSpace(md.Title); t != "" {
 					data.title = t
@@ -194,12 +222,12 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 				data.year = strings.TrimSpace(md.Year)
 			}
 		}
-		info[full] = data
+		sortInfo[full] = data
 	}
-	if len(info) == 0 {
+	if len(sortInfo) == 0 {
 		return nil
 	}
-	return info
+	return sortInfo
 }
 
 func (m *Model) sortEntries(entries []fs.DirEntry, info map[string]entrySortInfo) {

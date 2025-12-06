@@ -149,7 +149,8 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		entry := m.entries[m.cursor]
 		if !entry.IsDir() {
 			full := filepath.Join(m.cwd, entry.Name())
-			showMetadataOnly = full == m.currentMetaPath && m.currentMeta != nil
+			canonical := canonicalPath(full)
+			showMetadataOnly = canonical == m.currentMetaPath && m.currentMeta != nil
 		}
 	}
 

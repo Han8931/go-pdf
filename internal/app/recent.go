@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,27 +9,29 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"pdf-tui/internal/meta"
 )
 
-const defaultRecentSyncInterval = time.Minute
+const defaultRecentlyAddedSyncInterval = time.Minute
 
-func (m *Model) maybeSyncRecentDir(force bool) error {
-	if m.recentDir == "" || m.recentMaxAge <= 0 {
+func (m *Model) maybeSyncRecentlyAddedDir(force bool) error {
+	if m.recentlyAddedDir == "" || m.recentlyAddedMaxAge <= 0 {
 		return nil
 	}
-	if !force && !m.lastRecentSync.IsZero() {
-		if time.Since(m.lastRecentSync) < m.recentSyncInt {
+	if !force && !m.lastRecentlyAddedSync.IsZero() {
+		if time.Since(m.lastRecentlyAddedSync) < m.recentlyAddedSyncInt {
 			return nil
 		}
 	}
-	if err := syncRecentDirectory(m.root, m.recentDir, m.recentMaxAge); err != nil {
+	if err := syncRecentlyAddedDirectory(m.root, m.recentlyAddedDir, m.recentlyAddedMaxAge, m.meta); err != nil {
 		return err
 	}
-	m.lastRecentSync = time.Now()
+	m.lastRecentlyAddedSync = time.Now()
 	return nil
 }
 
-func syncRecentDirectory(root, recentDir string, maxAge time.Duration) error {
+func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, store *meta.Store) error {
 	if root == "" || recentDir == "" || maxAge <= 0 {
 		return nil
 	}
@@ -88,7 +91,9 @@ func syncRecentDirectory(root, recentDir string, maxAge time.Duration) error {
 			return nil
 		}
 
-		linkName := recentLinkName(rel)
+		base := filepath.Base(rel)
+		title, year := lookupMetadataLabels(store, path)
+		linkName := mapBackedLinkName(base, title, year, desired)
 		desired[linkName] = path
 		return nil
 	})
@@ -150,22 +155,62 @@ func syncRecentDirectory(root, recentDir string, maxAge time.Duration) error {
 	return nil
 }
 
-func recentLinkName(rel string) string {
-	trimmed := strings.TrimSpace(rel)
+func mapBackedLinkName(baseName, title, year string, used map[string]string) string {
+	base := buildLinkBase(baseName, title, year)
+	name := base
+	suffix := 2
+	for {
+		if _, exists := used[name]; !exists {
+			return name
+		}
+		name = appendNumericSuffix(base, suffix)
+		suffix++
+	}
+}
+
+func sanitizeLinkName(value string) string {
+	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
 	}
-	trimmed = strings.ReplaceAll(trimmed, "\\", string(filepath.Separator))
-	parts := strings.Split(trimmed, string(filepath.Separator))
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.ReplaceAll(part, "\\", "_")
-		part = strings.ReplaceAll(part, "/", "_")
-		part = strings.ReplaceAll(part, " ", "_")
-		if part == "" {
-			part = "_"
-		}
-		parts[i] = part
+	trimmed = strings.ReplaceAll(trimmed, "\\", "_")
+	trimmed = strings.ReplaceAll(trimmed, "/", "_")
+	trimmed = strings.ReplaceAll(trimmed, " ", "_")
+	return trimmed
+}
+
+func buildLinkBase(baseName, title, year string) string {
+	ext := filepath.Ext(baseName)
+	core := strings.TrimSuffix(baseName, ext)
+	core = sanitizeLinkName(core)
+	if core == "" {
+		core = "_"
 	}
-	return strings.Join(parts, "__")
+	title = sanitizeLinkName(title)
+	year = sanitizeLinkName(year)
+	if title != "" {
+		if year == "" {
+			year = "-"
+		}
+		core = fmt.Sprintf("[%s][%s]", year, title)
+	}
+	return core + ext
+}
+
+func appendNumericSuffix(name string, suffix int) string {
+	ext := filepath.Ext(name)
+	core := strings.TrimSuffix(name, ext)
+	return fmt.Sprintf("%s__%d%s", core, suffix, ext)
+}
+
+func lookupMetadataLabels(store *meta.Store, path string) (title, year string) {
+	if store == nil || path == "" {
+		return "", ""
+	}
+	ctx := context.Background()
+	md, err := store.Get(ctx, canonicalPath(path))
+	if err != nil || md == nil {
+		return "", ""
+	}
+	return strings.TrimSpace(md.Title), strings.TrimSpace(md.Year)
 }

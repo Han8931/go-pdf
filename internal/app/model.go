@@ -46,19 +46,22 @@ type Model struct {
 	cursor  int
 	err     error
 
-	selected       map[string]bool
-	cut            []string
-	status         string
-	statusAt       time.Time
-	sticky         bool
-	commandOutput  []string
-	entryTitles    map[string]string
-	sortMode       sortMode
-	awaitingSort   bool
-	recentDir      string
-	recentMaxAge   time.Duration
-	recentSyncInt  time.Duration
-	lastRecentSync time.Time
+	selected              map[string]bool
+	cut                   []string
+	status                string
+	statusAt              time.Time
+	sticky                bool
+	commandOutput         []string
+	entryTitles           map[string]string
+	sortMode              sortMode
+	awaitingSort          bool
+	recentlyAddedDir      string
+	recentlyAddedMaxAge   time.Duration
+	recentlyAddedSyncInt  time.Duration
+	lastRecentlyAddedSync time.Time
+
+	recentlyOpenedDir   string
+	recentlyOpenedLimit int
 
 	viewportStart  int
 	viewportHeight int
@@ -139,24 +142,44 @@ func (m *Model) loadMetaFieldIntoInput() {
 	m.input.CursorEnd()
 }
 
-func (m *Model) updateCurrentMetadata(path string, isDir bool) {
-	if path == "" || isDir || m.meta == nil {
+func canonicalPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != "" {
+		path = resolved
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return path
+}
+
+func (m *Model) updateCurrentMetadata(path string) {
+	if path == "" || m.meta == nil {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
 		return
 	}
-	if m.currentMetaPath == path {
+	canonical := canonicalPath(path)
+	info, err := os.Stat(canonical)
+	if err != nil || info.IsDir() {
+		m.currentMeta = nil
+		m.currentMetaPath = ""
+		return
+	}
+	if m.currentMetaPath == canonical {
 		return
 	}
 	ctx := context.Background()
-	md, err := m.meta.Get(ctx, path)
+	md, err := m.meta.Get(ctx, canonical)
 	if err != nil {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
 		m.setStatus("Failed to load metadata: " + err.Error())
 		return
 	}
-	m.currentMetaPath = path
+	m.currentMetaPath = canonical
 	m.currentMeta = md
 }
 
@@ -169,26 +192,31 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	ti.Focus()
 
 	m := Model{
-		root:           root,
-		cwd:            root,
-		selected:       make(map[string]bool),
-		input:          ti,
-		viewportHeight: 20,
-		meta:           store,
-		sortMode:       sortByName,
-		entryTitles:    make(map[string]string),
-		recentDir:      strings.TrimSpace(cfg.RecentDir),
-		recentMaxAge:   time.Duration(cfg.RecentDays) * 24 * time.Hour,
-		recentSyncInt:  defaultRecentSyncInterval,
+		root:                 root,
+		cwd:                  root,
+		selected:             make(map[string]bool),
+		input:                ti,
+		viewportHeight:       20,
+		meta:                 store,
+		sortMode:             sortByName,
+		entryTitles:          make(map[string]string),
+		recentlyAddedDir:     strings.TrimSpace(cfg.RecentlyAddedDir),
+		recentlyAddedMaxAge:  time.Duration(cfg.RecentlyAddedDays) * 24 * time.Hour,
+		recentlyAddedSyncInt: defaultRecentlyAddedSyncInterval,
+		recentlyOpenedDir:    strings.TrimSpace(cfg.RecentlyOpenedDir),
+		recentlyOpenedLimit:  cfg.RecentlyOpenedLimit,
 	}
-	if m.recentSyncInt <= 0 {
-		m.recentSyncInt = defaultRecentSyncInterval
+	if m.recentlyAddedSyncInt <= 0 {
+		m.recentlyAddedSyncInt = defaultRecentlyAddedSyncInterval
 	}
-	if m.recentDir != "" && !filepath.IsAbs(m.recentDir) {
-		m.recentDir = filepath.Join(root, m.recentDir)
+	if m.recentlyAddedDir != "" && !filepath.IsAbs(m.recentlyAddedDir) {
+		m.recentlyAddedDir = filepath.Join(root, m.recentlyAddedDir)
 	}
-	if err := m.maybeSyncRecentDir(true); err != nil {
-		m.setStatus("Recent sync failed: " + err.Error())
+	if m.recentlyOpenedDir != "" && !filepath.IsAbs(m.recentlyOpenedDir) {
+		m.recentlyOpenedDir = filepath.Join(root, m.recentlyOpenedDir)
+	}
+	if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
+		m.setStatus("Recently added sync failed: " + err.Error())
 	}
 	m.loadEntries()
 	m.updateTextPreview()
@@ -326,28 +354,43 @@ func (m *Model) updateTextPreview() {
 
 	if len(m.entries) == 0 {
 		m.previewPath = ""
-		m.updateCurrentMetadata("", true)
+		m.updateCurrentMetadata("")
 		return
 	}
 
 	e := m.entries[m.cursor]
 	full := filepath.Join(m.cwd, e.Name())
-	m.updateCurrentMetadata(full, e.IsDir())
+	canonical := canonicalPath(full)
+	info, err := e.Info()
+	isDir := e.IsDir()
+	if err == nil {
+		isDir = info.IsDir()
+	}
+	m.updateCurrentMetadata(canonical)
 
 	// Directories: show summary and contents
-	if e.IsDir() {
+	if isDir {
 		m.previewPath = full
 		m.previewText = m.directoryPreviewContents(full)
 		return
 	}
 
+	if m.currentMeta != nil && m.currentMetaPath == canonical {
+		m.previewPath = full
+		return
+	}
+
 	// Non-PDFs: no text preview
-	if !strings.HasSuffix(strings.ToLower(e.Name()), ".pdf") {
+	name := e.Name()
+	if err == nil {
+		name = info.Name()
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
 		m.previewPath = full
 		m.previewText = []string{
 			"No preview (not a PDF)",
 			"",
-			e.Name(),
+			name,
 		}
 		return
 	}

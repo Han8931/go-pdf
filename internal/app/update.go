@@ -59,7 +59,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, path := range msg.updatedPaths {
 				if m.currentMetaPath == path {
 					m.currentMetaPath = ""
-					m.updateCurrentMetadata(path, false)
+					m.updateCurrentMetadata(path)
 				}
 				if current != "" && path == current {
 					m.updateTextPreview()
@@ -449,7 +449,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clearStatus()
 				m.updateTextPreview() // <── NEW
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
-				_ = exec.Command("zathura", full).Start()
+				if err := exec.Command("zathura", full).Start(); err != nil {
+					m.setStatus("Failed to open PDF: " + err.Error())
+				} else {
+					m.recordRecentlyOpened(full)
+				}
 			} else {
 				m.setStatus("Not a PDF")
 			}
@@ -609,21 +613,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			entry := m.entries[m.cursor]
 			full := filepath.Join(m.cwd, entry.Name())
+			info, err := entry.Info()
+			isDir := entry.IsDir()
+			if err == nil {
+				isDir = info.IsDir()
+			}
 
 			// For now: only files (skip dirs)
-			if entry.IsDir() {
+			if isDir {
 				m.setStatus("Metadata editing is for files only")
 				return m, nil
 			}
 
+			canonical := canonicalPath(full)
+
 			m.state = stateMetaPreview
-			m.metaEditingPath = full
+			m.metaEditingPath = canonical
 
 			// load existing metadata if present
-			draft := meta.Metadata{Path: full}
+			draft := meta.Metadata{Path: canonical}
 			if m.meta != nil {
 				ctx := context.Background()
-				existing, err := m.meta.Get(ctx, full)
+				existing, err := m.meta.Get(ctx, canonical)
 				if err != nil {
 					m.setStatus("Failed to load metadata: " + err.Error())
 				} else if existing != nil {
@@ -699,7 +710,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
 			"  Metadata   : e preview/edit metadata, :arxiv <id> [files...] fetch from arXiv",
-			"  Recent     : :recent rebuilds the Recent directory",
+			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
+			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config shows/edits the config file",
 			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
@@ -716,10 +728,10 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		m.clearCommandOutput()
 		m.setStatus("Command output cleared")
 	case "recent":
-		if err := m.maybeSyncRecentDir(true); err != nil {
-			m.setStatus("Recent sync failed: " + err.Error())
+		if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
+			m.setStatus("Recently added sync failed: " + err.Error())
 		} else {
-			m.setStatus("Recent directory updated")
+			m.setStatus("Recently added directory updated")
 		}
 	case "config":
 		return m.handleConfigCommand(args)
