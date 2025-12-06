@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"pdf-tui/internal/meta"
+	"gorae/internal/meta"
 )
 
 func (m *Model) recordRecentlyOpened(path string) {

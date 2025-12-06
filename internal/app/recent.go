@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"pdf-tui/internal/meta"
+	"gorae/internal/meta"
 )
 
 const defaultRecentlyAddedSyncInterval = time.Minute

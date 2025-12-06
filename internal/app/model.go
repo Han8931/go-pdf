@@ -13,8 +13,8 @@ import (
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"pdf-tui/internal/config"
-	"pdf-tui/internal/meta"
+	"gorae/internal/config"
+	"gorae/internal/meta"
 )
 
 const statusMessageTTL = 4 * time.Second

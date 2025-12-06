@@ -1,15 +1,15 @@
 
 ```sh
-go mod init pdf-tui
+go mod init gorae
 go mod tidy
 ```
 
 Build a binary
 
 ```sh
-go build -o pdf-tui
-./pdf-tui
-./pdf-tui -root ~/Documents/Papers
+go build -o gorae
+./gorae
+./gorae -root ~/Documents/Papers
 ```
 
 

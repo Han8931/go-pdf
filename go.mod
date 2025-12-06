@@ -1,4 +1,4 @@
-module pdf-tui
+module gorae
 
 go 1.25.1
 

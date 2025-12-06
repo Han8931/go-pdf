@@ -34,7 +34,7 @@ func defaultConfigPath() (string, error) {
 		}
 		cfgHome = filepath.Join(home, ".config")
 	}
-	return filepath.Join(cfgHome, "pdf-tui", "config.json"), nil
+	return filepath.Join(cfgHome, "gorae", "config.json"), nil
 }
 
 // Path returns the full path to the config file, using the same rules as LoadOrInit.
@@ -43,6 +43,12 @@ func Path() (string, error) {
 }
 
 func defaultWatchDir() (string, error) {
+	if v := strings.TrimSpace(os.Getenv("GORAE_WATCH_DIR")); v != "" {
+		return v, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("GOPAPYRUS_WATCH_DIR")); v != "" {
+		return v, nil
+	}
 	if v := strings.TrimSpace(os.Getenv("PDF_TUI_WATCH_DIR")); v != "" {
 		return v, nil
 	}
@@ -54,6 +60,12 @@ func defaultWatchDir() (string, error) {
 }
 
 func defaultMetaDir() (string, error) {
+	if v := strings.TrimSpace(os.Getenv("GORAE_META_DIR")); v != "" {
+		return v, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("GOPAPYRUS_META_DIR")); v != "" {
+		return v, nil
+	}
 	if v := strings.TrimSpace(os.Getenv("PDF_TUI_META_DIR")); v != "" {
 		return v, nil
 	}
@@ -65,7 +77,7 @@ func defaultMetaDir() (string, error) {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "pdf-tui"), nil
+	return filepath.Join(dataHome, "gorae"), nil
 }
 
 func LoadOrInit() (*Config, error) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"pdf-tui/internal/meta"
+	"gorae/internal/meta"
 )
 
 // pad or truncate a string to exactly width columns.

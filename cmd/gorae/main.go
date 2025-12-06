@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"pdf-tui/internal/app"
-	"pdf-tui/internal/config"
-	"pdf-tui/internal/meta"
+	"gorae/internal/app"
+	"gorae/internal/config"
+	"gorae/internal/meta"
 )
 
 func main() {

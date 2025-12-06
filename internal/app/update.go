@@ -13,9 +13,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"pdf-tui/internal/arxiv"
-	"pdf-tui/internal/config"
-	"pdf-tui/internal/meta"
+	"gorae/internal/arxiv"
+	"gorae/internal/config"
+	"gorae/internal/meta"
 )
 
 type configEditFinishedMsg struct {
