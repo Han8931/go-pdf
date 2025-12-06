@@ -15,6 +15,7 @@ type Config struct {
 	RecentlyAddedDays   int    `json:"recent_days,omitempty"`
 	RecentlyOpenedDir   string `json:"recently_opened_dir,omitempty"`
 	RecentlyOpenedLimit int    `json:"recently_opened_limit,omitempty"`
+	Editor              string `json:"editor,omitempty"`
 }
 
 const (
@@ -80,6 +81,13 @@ func defaultMetaDir() (string, error) {
 	return filepath.Join(dataHome, "gorae"), nil
 }
 
+func defaultEditor() string {
+	if v := strings.TrimSpace(os.Getenv("EDITOR")); v != "" {
+		return v
+	}
+	return "vi"
+}
+
 func LoadOrInit() (*Config, error) {
 	path, err := defaultConfigPath()
 	if err != nil {
@@ -92,8 +100,14 @@ func LoadOrInit() (*Config, error) {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return nil, err
 		}
-		if err := cfg.ensureDefaults(); err != nil {
+		changed, err := cfg.ensureDefaults()
+		if err != nil {
 			return nil, err
+		}
+		if changed {
+			if err := writeConfig(path, &cfg); err != nil {
+				return nil, err
+			}
 		}
 		return &cfg, nil
 	}
@@ -117,6 +131,7 @@ func LoadOrInit() (*Config, error) {
 		RecentlyAddedDays:   defaultRecentDays,
 		RecentlyOpenedDir:   recentOpened,
 		RecentlyOpenedLimit: defaultRecentlyOpenedLimit,
+		Editor:              defaultEditor(),
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
@@ -135,54 +150,70 @@ func LoadOrInit() (*Config, error) {
 		return nil, err
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeConfig(path, cfg); err != nil {
 		return nil, err
 	}
 
 	fmt.Println("Config saved to", path)
-	if err := cfg.ensureDefaults(); err != nil {
+	if _, err := cfg.ensureDefaults(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) ensureDefaults() error {
+func writeConfig(path string, cfg *Config) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func (c *Config) ensureDefaults() (bool, error) {
+	changed := false
 	if c == nil {
-		return fmt.Errorf("config is nil")
+		return changed, fmt.Errorf("config is nil")
 	}
 	if strings.TrimSpace(c.WatchDir) == "" {
 		w, err := defaultWatchDir()
 		if err != nil {
-			return err
+			return changed, err
 		}
 		c.WatchDir = w
+		changed = true
 	}
 	if strings.TrimSpace(c.MetaDir) == "" {
 		m, err := defaultMetaDir()
 		if err != nil {
-			return err
+			return changed, err
 		}
 		c.MetaDir = m
+		changed = true
 	}
 	if strings.TrimSpace(c.RecentlyAddedDir) == "" {
 		c.RecentlyAddedDir = filepath.Join(c.WatchDir, defaultRecentlyAddedDirName)
+		changed = true
 	} else if isLegacyRecentPath(c.RecentlyAddedDir, c.WatchDir) {
 		c.RecentlyAddedDir = upgradeLegacyRecentPath(c.RecentlyAddedDir)
+		changed = true
 	}
 	if c.RecentlyAddedDays <= 0 {
 		c.RecentlyAddedDays = defaultRecentDays
+		changed = true
 	}
 	if strings.TrimSpace(c.RecentlyOpenedDir) == "" {
 		c.RecentlyOpenedDir = filepath.Join(c.WatchDir, defaultRecentlyOpenedName)
+		changed = true
 	}
 	if c.RecentlyOpenedLimit <= 0 {
 		c.RecentlyOpenedLimit = defaultRecentlyOpenedLimit
+		changed = true
 	}
-	return nil
+	if strings.TrimSpace(c.Editor) == "" {
+		c.Editor = defaultEditor()
+		changed = true
+	}
+	return changed, nil
 }
 
 func isLegacyRecentPath(path, watch string) bool {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,12 @@ import (
 
 type configEditFinishedMsg struct {
 	err error
+}
+
+type metadataEditFinishedMsg struct {
+	err        error
+	tmpPath    string
+	targetPath string
 }
 
 type arxivUpdateMsg struct {
@@ -46,6 +53,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setStatus("Config edit finished")
 		}
+		return m, nil
+
+	case metadataEditFinishedMsg:
+		m.handleMetadataEditorFinished(msg)
 		return m, nil
 
 	case arxivUpdateMsg:
@@ -236,6 +247,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadMetaFieldIntoInput()
 				m.input.Focus()
 				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
+				return m, nil
+			case "v":
+				if cmd := m.launchMetadataEditor(); cmd != nil {
+					return m, cmd
+				}
 				return m, nil
 			case "esc":
 				m.state = stateNormal
@@ -645,7 +661,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.metaFieldIndex = 0
 			m.input.SetValue("")
 			m.input.Blur()
-			m.setPersistentStatus("Metadata preview: press 'e' again to edit (Esc to cancel)")
+			m.setPersistentStatus("Metadata preview: 'e' edit here, 'v' open editor, Esc cancel")
 			return m, nil
 
 		case ":":
@@ -668,6 +684,147 @@ func metaEditStatus(index int) string {
 		return fmt.Sprintf("Edit %s (Enter to save, Tab/Shift+Tab to move, Esc to cancel)", label)
 	}
 	return fmt.Sprintf("Edit %s (Enter/Tab to continue, Shift+Tab to go back, Esc to cancel)", label)
+}
+
+func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
+	if msg.tmpPath != "" {
+		defer os.Remove(msg.tmpPath)
+	}
+	m.state = stateNormal
+	m.metaEditingPath = ""
+	m.input.SetValue("")
+
+	if msg.err != nil {
+		m.setStatus("Metadata editor failed: " + msg.err.Error())
+		return
+	}
+	if strings.TrimSpace(msg.tmpPath) == "" {
+		m.setStatus("Metadata editor failed: no data returned")
+		return
+	}
+	target := strings.TrimSpace(msg.targetPath)
+	if target == "" {
+		m.setStatus("Metadata editor failed: unknown target")
+		return
+	}
+	data, err := os.ReadFile(msg.tmpPath)
+	if err != nil {
+		m.setStatus("Failed to read metadata edit: " + err.Error())
+		return
+	}
+	md, err := parseMetadataEditorData(data, target)
+	if err != nil {
+		m.setStatus("Failed to parse metadata: " + err.Error())
+		return
+	}
+	if m.meta == nil {
+		m.setStatus("Metadata store not available")
+		return
+	}
+	ctx := context.Background()
+	if err := m.meta.Upsert(ctx, &md); err != nil {
+		m.setStatus("Failed to save metadata: " + err.Error())
+		return
+	}
+	m.metaDraft = md
+	m.currentMetaPath = ""
+	m.resortAndPreserveSelection()
+	m.setStatus("Metadata saved")
+}
+
+func (m *Model) launchMetadataEditor() tea.Cmd {
+	target := strings.TrimSpace(m.metaEditingPath)
+	if target == "" {
+		m.setStatus("No metadata target selected")
+		return nil
+	}
+	if strings.TrimSpace(m.metaDraft.Path) == "" {
+		m.metaDraft.Path = target
+	}
+	tmp, err := os.CreateTemp("", "gorae-metadata-*.json")
+	if err != nil {
+		m.setStatus("Failed to create temp file: " + err.Error())
+		return nil
+	}
+	tmpPath := tmp.Name()
+	data := metadataEditorFileFromMetadata(m.metaDraft)
+	if err := writeMetadataEditorFile(tmp, data); err != nil {
+		os.Remove(tmpPath)
+		m.setStatus("Failed to prepare metadata for editor: " + err.Error())
+		return nil
+	}
+	editor := m.configEditor()
+	cmd := exec.Command(editor, tmpPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fileName := filepath.Base(target)
+	if fileName == "" {
+		fileName = target
+	}
+	m.state = stateNormal
+	m.metaEditingPath = ""
+	m.input.SetValue("")
+	m.setPersistentStatus(fmt.Sprintf("Editing metadata for %s with %s (exit editor to return)", fileName, editor))
+
+	targetPath := target
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return metadataEditFinishedMsg{
+			err:        err,
+			tmpPath:    tmpPath,
+			targetPath: targetPath,
+		}
+	})
+}
+
+type metadataEditorFile struct {
+	Title    string `json:"title"`
+	Author   string `json:"author"`
+	Venue    string `json:"venue"`
+	Year     string `json:"year"`
+	Abstract string `json:"abstract"`
+}
+
+func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
+	return metadataEditorFile{
+		Title:    md.Title,
+		Author:   md.Author,
+		Venue:    md.Venue,
+		Year:     md.Year,
+		Abstract: md.Abstract,
+	}
+}
+
+func writeMetadataEditorFile(f *os.File, data metadataEditorFile) error {
+	defer f.Close()
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(raw); err != nil {
+		return err
+	}
+	if _, err := f.WriteString("\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseMetadataEditorData(raw []byte, path string) (meta.Metadata, error) {
+	var data metadataEditorFile
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return meta.Metadata{}, fmt.Errorf("parse JSON: %w", err)
+	}
+	md := meta.Metadata{
+		Path:     path,
+		Title:    strings.TrimSpace(data.Title),
+		Author:   strings.TrimSpace(data.Author),
+		Venue:    strings.TrimSpace(data.Venue),
+		Year:     strings.TrimSpace(data.Year),
+		Abstract: strings.TrimSpace(data.Abstract),
+	}
+	return md, nil
 }
 
 func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
@@ -709,7 +866,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit metadata, :arxiv <id> [files...] fetch from arXiv",
+			"  Metadata   : e preview/edit metadata, v edit metadata in editor, :arxiv <id> [files...] fetch from arXiv",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config shows/edits the config file",
@@ -757,10 +914,13 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 			m.setStatus("Failed to resolve config path: " + err.Error())
 			return nil
 		}
+		editor := m.configEditor()
 		lines := []string{
 			"Config file:",
 			"  " + path,
-			"Use :config edit to open it in your $EDITOR.",
+			"Configured editor:",
+			"  " + editor,
+			"Use :config edit to open it.",
 		}
 		m.setCommandOutput(lines)
 		m.setPersistentStatus("Config path displayed (use :clear to hide)")
@@ -775,10 +935,7 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 			m.setStatus("Failed to resolve config path: " + err.Error())
 			return nil
 		}
-		editor := strings.TrimSpace(os.Getenv("EDITOR"))
-		if editor == "" {
-			editor = "vi"
-		}
+		editor := m.configEditor()
 		cmd := exec.Command(editor, path)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -791,6 +948,18 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
 		return nil
 	}
+}
+
+func (m *Model) configEditor() string {
+	if m.cfg != nil {
+		if editor := strings.TrimSpace(m.cfg.Editor); editor != "" {
+			return editor
+		}
+	}
+	if env := strings.TrimSpace(os.Getenv("EDITOR")); env != "" {
+		return env
+	}
+	return "vi"
 }
 
 func (m *Model) handleArxivCommand(args []string) tea.Cmd {

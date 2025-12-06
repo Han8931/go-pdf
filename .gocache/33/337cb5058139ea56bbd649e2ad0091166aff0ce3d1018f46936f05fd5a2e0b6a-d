@@ -1,0 +1,7 @@
+./fs.go
+./model.go
+./preview_text.go
+./recent.go
+./recent_opened.go
+./update.go
+./view.go

@@ -338,7 +338,8 @@ func (m Model) renderMetaPopupLines(width int) []string {
 	} else {
 		popupLines = append(popupLines,
 			"",
-			"Press 'e' again to edit metadata.",
+			"Press 'e' again to edit metadata here.",
+			"Press 'v' to edit metadata in your editor.",
 			"Press Esc to cancel.",
 		)
 	}

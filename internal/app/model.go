@@ -40,6 +40,7 @@ const (
 )
 
 type Model struct {
+	cfg     *config.Config
 	root    string
 	cwd     string
 	entries []fs.DirEntry
@@ -192,6 +193,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	ti.Focus()
 
 	m := Model{
+		cfg:                  cfg,
 		root:                 root,
 		cwd:                  root,
 		selected:             make(map[string]bool),
