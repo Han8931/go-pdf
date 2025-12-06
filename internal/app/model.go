@@ -18,6 +18,14 @@ import (
 
 const statusMessageTTL = 4 * time.Second
 
+type sortMode int
+
+const (
+	sortByName sortMode = iota
+	sortByTitle
+	sortByYear
+)
+
 type uiState int
 
 const (
@@ -44,6 +52,8 @@ type Model struct {
 	sticky        bool
 	commandOutput []string
 	entryTitles   map[string]string
+	sortMode      sortMode
+	awaitingSort  bool
 
 	viewportStart  int
 	viewportHeight int
@@ -159,6 +169,7 @@ func NewModel(root string, store *meta.Store) Model {
 		input:          ti,
 		viewportHeight: 20,
 		meta:           store,
+		sortMode:       sortByName,
 		entryTitles:    make(map[string]string),
 	}
 	m.loadEntries()
@@ -184,6 +195,73 @@ func (m *Model) setPersistentStatus(msg string) {
 	m.status = msg
 	m.statusAt = time.Now()
 	m.sticky = true
+}
+
+func sortModeLabel(mode sortMode) string {
+	switch mode {
+	case sortByTitle:
+		return "title"
+	case sortByYear:
+		return "year"
+	default:
+		return "name"
+	}
+}
+
+func (m *Model) applySortMode(mode sortMode) {
+	if m.sortMode == mode {
+		m.setStatus(fmt.Sprintf("Already sorting by %s", sortModeLabel(mode)))
+		return
+	}
+	m.sortMode = mode
+	m.resortAndPreserveSelection()
+	m.setStatus(fmt.Sprintf("Sorting by %s", sortModeLabel(mode)))
+}
+
+func (m *Model) currentEntryPath() string {
+	if len(m.entries) == 0 || m.cursor < 0 || m.cursor >= len(m.entries) {
+		return ""
+	}
+	return filepath.Join(m.cwd, m.entries[m.cursor].Name())
+}
+
+func (m *Model) findEntryIndex(path string) int {
+	if path == "" {
+		return -1
+	}
+	for i, e := range m.entries {
+		full := filepath.Join(m.cwd, e.Name())
+		if full == path {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) syncCurrentEntryState() {
+	if len(m.entries) == 0 {
+		m.updateTextPreview()
+		return
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.cursor >= len(m.entries) {
+		m.cursor = len(m.entries) - 1
+	}
+	m.updateTextPreview()
+}
+
+func (m *Model) resortAndPreserveSelection() {
+	current := m.currentEntryPath()
+	m.resortEntries()
+	if current != "" {
+		if idx := m.findEntryIndex(current); idx >= 0 {
+			m.cursor = idx
+		}
+	}
+	m.ensureCursorVisible()
+	m.syncCurrentEntryState()
 }
 
 func (m *Model) clearStatus() {

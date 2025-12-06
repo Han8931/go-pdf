@@ -54,12 +54,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(msg.updatedPaths) > 0 {
-			m.refreshEntryTitles()
-			var current string
-			if len(m.entries) > 0 {
-				entry := m.entries[m.cursor]
-				current = filepath.Join(m.cwd, entry.Name())
-			}
+			current := m.currentEntryPath()
+			m.resortAndPreserveSelection()
 			for _, path := range msg.updatedPaths {
 				if m.currentMetaPath == path {
 					m.currentMetaPath = ""
@@ -83,6 +79,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.state != stateCommand && len(m.commandOutput) > 0 {
 			m.clearCommandOutput()
+		}
+
+		if m.state != stateNormal && m.awaitingSort {
+			m.awaitingSort = false
+		}
+
+		if m.state == stateNormal && m.awaitingSort {
+			m.awaitingSort = false
+			switch strings.ToLower(key) {
+			case "t":
+				m.applySortMode(sortByTitle)
+			case "y":
+				m.applySortMode(sortByYear)
+			default:
+				m.setStatus("Sort cancelled")
+			}
+			return m, nil
 		}
 
 		// ===========================
@@ -281,9 +294,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.setStatus("Metadata saved")
 						m.currentMetaPath = ""
-						m.updateCurrentMetadata(m.metaDraft.Path, false)
-						m.updateTextPreview()
-						m.refreshEntryTitles()
+						m.resortAndPreserveSelection()
 					}
 				} else {
 					m.setStatus("Metadata store not available")
@@ -455,6 +466,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadEntries()
 			m.clearStatus()
 			m.updateTextPreview() // <── NEW
+
+		case "s":
+			m.awaitingSort = true
+			m.setStatus("Sort: 't' by title, 'y' by year")
+			return m, nil
 
 		case " ":
 			if len(m.entries) == 0 {

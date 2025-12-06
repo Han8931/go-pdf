@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ func (m *Model) loadEntries() {
 	if err != nil {
 		m.entries = nil
 		m.cursor = 0
+		m.resortEntries()
 		return
 	}
 
@@ -35,23 +37,12 @@ func (m *Model) loadEntries() {
 		filtered = append(filtered, e)
 	}
 
-	// sort dirs first then alpha
-	sort.SliceStable(filtered, func(i, j int) bool {
-		di, dj := filtered[i].IsDir(), filtered[j].IsDir()
-		if di != dj {
-			return di && !dj
-		}
-		return strings.ToLower(filtered[i].Name()) <
-			strings.ToLower(filtered[j].Name())
-	})
-
 	m.entries = filtered
-
 	if m.cursor >= len(m.entries) {
 		m.cursor = 0
 	}
+	m.resortEntries()
 	m.ensureCursorVisible()
-	m.refreshEntryTitles()
 }
 
 func (m *Model) removeFromCut(path string) {
@@ -96,6 +87,11 @@ func avoidNameClash(dst string) string {
 }
 
 func (m *Model) refreshEntryTitles() {
+	info := m.buildEntrySortInfo(m.entries)
+	m.refreshEntryTitlesWithInfo(info)
+}
+
+func (m *Model) refreshEntryTitlesWithInfo(info map[string]entrySortInfo) {
 	if m.entryTitles == nil {
 		m.entryTitles = make(map[string]string)
 	}
@@ -103,10 +99,30 @@ func (m *Model) refreshEntryTitles() {
 		delete(m.entryTitles, k)
 	}
 
-	ctx := context.Background()
+	var ctx context.Context
+	useMeta := info == nil && m.meta != nil
+	if useMeta {
+		ctx = context.Background()
+	}
+
 	for _, e := range m.entries {
 		full := filepath.Join(m.cwd, e.Name())
-		m.entryTitles[full] = m.resolveEntryTitle(ctx, full, e)
+		if e.IsDir() {
+			m.entryTitles[full] = e.Name() + "/"
+			continue
+		}
+		if info != nil {
+			if data, ok := info[full]; ok {
+				m.entryTitles[full] = data.display()
+				continue
+			}
+		}
+		if useMeta {
+			m.entryTitles[full] = m.resolveEntryTitle(ctx, full, e)
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		m.entryTitles[full] = fmt.Sprintf("[-][%s]", name)
 	}
 }
 
@@ -117,16 +133,155 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 
 	name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 	if m.meta == nil {
-		return name
+		return fmt.Sprintf("[-][%s]", name)
 	}
 
 	md, err := m.meta.Get(ctx, fullPath)
 	if err != nil || md == nil {
-		return name
+		return fmt.Sprintf("[-][%s]", name)
 	}
 	title := strings.TrimSpace(md.Title)
 	if title == "" {
-		return name
+		title = name
 	}
-	return title
+	year := strings.TrimSpace(md.Year)
+	if year == "" {
+		year = "-"
+	}
+	return fmt.Sprintf("[%s][%s]", year, title)
+}
+
+func (m *Model) resortEntries() {
+	if len(m.entries) == 0 {
+		if m.entryTitles != nil {
+			for k := range m.entryTitles {
+				delete(m.entryTitles, k)
+			}
+		}
+		return
+	}
+	info := m.buildEntrySortInfo(m.entries)
+	m.sortEntries(m.entries, info)
+	m.refreshEntryTitlesWithInfo(info)
+}
+
+func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortInfo {
+	if len(entries) == 0 {
+		return nil
+	}
+	info := make(map[string]entrySortInfo, len(entries))
+	var ctx context.Context
+	useMeta := m.meta != nil
+	if useMeta {
+		ctx = context.Background()
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		full := filepath.Join(m.cwd, e.Name())
+		base := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		data := entrySortInfo{title: base}
+		if useMeta {
+			md, err := m.meta.Get(ctx, full)
+			if err == nil && md != nil {
+				if t := strings.TrimSpace(md.Title); t != "" {
+					data.title = t
+				}
+				data.year = strings.TrimSpace(md.Year)
+			}
+		}
+		info[full] = data
+	}
+	if len(info) == 0 {
+		return nil
+	}
+	return info
+}
+
+func (m *Model) sortEntries(entries []fs.DirEntry, info map[string]entrySortInfo) {
+	if len(entries) == 0 {
+		return
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		di, dj := a.IsDir(), b.IsDir()
+		if di != dj {
+			return di && !dj
+		}
+		switch m.sortMode {
+		case sortByTitle:
+			return m.compareByTitle(a, b, info)
+		case sortByYear:
+			return m.compareByYear(a, b, info)
+		default:
+			return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
+		}
+	})
+}
+
+func (m *Model) compareByTitle(a, b fs.DirEntry, info map[string]entrySortInfo) bool {
+	ia := m.lookupSortInfo(a, info)
+	ib := m.lookupSortInfo(b, info)
+	ta := strings.ToLower(ia.title)
+	tb := strings.ToLower(ib.title)
+	if ta != tb {
+		return ta < tb
+	}
+	return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
+}
+
+func (m *Model) compareByYear(a, b fs.DirEntry, info map[string]entrySortInfo) bool {
+	ia := m.lookupSortInfo(a, info)
+	ib := m.lookupSortInfo(b, info)
+	ya := parseYearValue(ia.year)
+	yb := parseYearValue(ib.year)
+	if ya != yb {
+		return ya > yb
+	}
+	ta := strings.ToLower(ia.title)
+	tb := strings.ToLower(ib.title)
+	if ta != tb {
+		return ta < tb
+	}
+	return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
+}
+
+func (m *Model) lookupSortInfo(entry fs.DirEntry, info map[string]entrySortInfo) entrySortInfo {
+	if info != nil {
+		full := filepath.Join(m.cwd, entry.Name())
+		if data, ok := info[full]; ok {
+			return data
+		}
+	}
+	base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+	return entrySortInfo{title: base}
+}
+
+func parseYearValue(year string) int {
+	year = strings.TrimSpace(year)
+	if year == "" {
+		return -1
+	}
+	if y, err := strconv.Atoi(year); err == nil {
+		return y
+	}
+	return -1
+}
+
+type entrySortInfo struct {
+	title string
+	year  string
+}
+
+func (e entrySortInfo) display() string {
+	title := strings.TrimSpace(e.title)
+	if title == "" {
+		title = "-"
+	}
+	year := strings.TrimSpace(e.year)
+	if year == "" {
+		year = "-"
+	}
+	return fmt.Sprintf("[%s][%s]", year, title)
 }
