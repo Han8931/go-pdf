@@ -23,5 +23,5 @@ sudo apt install fonts-noto-color-emoji
 ```
 
 TODO
-- Recently added
 - Reading now
+- Screen renew or update key or auto
