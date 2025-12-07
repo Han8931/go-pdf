@@ -19,6 +19,7 @@ type Metadata struct {
 	Venue    string
 	Year     string
 	Abstract string
+	Tag      string
 }
 
 type Store struct {
@@ -51,19 +52,25 @@ CREATE TABLE IF NOT EXISTS metadata (
   author TEXT,
   venue  TEXT,
   year   TEXT,
-  abstract TEXT
+  abstract TEXT,
+  tag TEXT
 );
 `)
 	if err != nil {
 		return err
 	}
-	return s.ensureAbstractColumn()
+	if err := s.ensureColumn("abstract", "TEXT"); err != nil {
+		return err
+	}
+	return s.ensureColumn("tag", "TEXT")
 }
 
-func (s *Store) ensureAbstractColumn() error {
-	_, err := s.db.Exec(`ALTER TABLE metadata ADD COLUMN abstract TEXT`)
+func (s *Store) ensureColumn(name, typ string) error {
+	query := fmt.Sprintf(`ALTER TABLE metadata ADD COLUMN %s %s`, name, typ)
+	_, err := s.db.Exec(query)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "duplicate column name") {
 			return nil
 		}
 	}
@@ -73,12 +80,12 @@ func (s *Store) ensureAbstractColumn() error {
 func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT path, title, author, venue, year, abstract FROM metadata WHERE path = ?`,
+		`SELECT path, title, author, venue, year, abstract, tag FROM metadata WHERE path = ?`,
 		path,
 	)
 
 	m := Metadata{}
-	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Abstract); err {
+	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Abstract, &m.Tag); err {
 	case sql.ErrNoRows:
 		return nil, nil
 	case nil:
@@ -90,16 +97,17 @@ func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 
 func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO metadata (path, title, author, venue, year, abstract)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO metadata (path, title, author, venue, year, abstract, tag)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
   title    = excluded.title,
   author   = excluded.author,
   venue    = excluded.venue,
   year     = excluded.year,
-  abstract = excluded.abstract
+  abstract = excluded.abstract,
+  tag      = excluded.tag
 `,
-		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Abstract,
+		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Abstract, m.Tag,
 	)
 	return err
 }

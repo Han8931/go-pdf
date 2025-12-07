@@ -167,10 +167,10 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		return fitLines(previewSection, height)
 	}
 
-	reservedMeta := height / 3
-	if reservedMeta < 6 {
-		if height >= 6 {
-			reservedMeta = 6
+	reservedMeta := height / 2
+	if reservedMeta < 8 {
+		if height >= 8 {
+			reservedMeta = 8
 		} else if height > 2 {
 			reservedMeta = height / 2
 		} else {
@@ -295,7 +295,49 @@ func wrapTextToWidth(text string, width int) []string {
 	return lines
 }
 
+func isParagraphMetaField(label string) bool {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case "abstract", "note":
+		return true
+	default:
+		return false
+	}
+}
+
 func (m Model) renderMetaPopupLines(width int) []string {
+	lines := m.metaPopupContentLines(width)
+	if len(lines) == 0 {
+		return nil
+	}
+	height := m.viewportHeight
+	if height <= 0 {
+		height = len(lines)
+	}
+	if height <= 0 {
+		return nil
+	}
+	maxOffset := len(lines) - height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := m.metaPopupOffset
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := offset + height
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return lines[offset:end]
+}
+
+func (m Model) metaPopupContentLines(width int) []string {
+	if width <= 0 {
+		width = 40
+	}
 	label := metaFieldLabel(m.metaFieldIndex)
 	if label == "" {
 		label = "Field"
@@ -311,6 +353,11 @@ func (m Model) renderMetaPopupLines(width int) []string {
 		"Fields:",
 	}
 
+	wrapWidth := width - 6
+	if wrapWidth < 10 {
+		wrapWidth = width
+	}
+
 	for i := 0; i < metaFieldCount(); i++ {
 		fieldLabel := metaFieldLabel(i)
 		value := strings.TrimSpace(metadataFieldValue(m.metaDraft, i))
@@ -321,7 +368,27 @@ func (m Model) renderMetaPopupLines(width int) []string {
 		if m.metaFieldIndex == i {
 			prefix = "➤ "
 		}
+
+		if isParagraphMetaField(fieldLabel) {
+			popupLines = append(popupLines, fmt.Sprintf("%s%s:", prefix, fieldLabel))
+			wrapped := wrapTextToWidth(value, wrapWidth)
+			for _, line := range wrapped {
+				popupLines = append(popupLines, "    "+line)
+			}
+			continue
+		}
+
 		popupLines = append(popupLines, fmt.Sprintf("%s%s: %s", prefix, fieldLabel, value))
+	}
+
+	popupLines = append(popupLines, "", "Note preview:")
+	note := strings.TrimSpace(m.currentNote)
+	if note == "" {
+		popupLines = append(popupLines, "    (none - press 'n' to edit)")
+	} else {
+		for _, line := range wrapTextToWidth(note, wrapWidth) {
+			popupLines = append(popupLines, "    "+line)
+		}
 	}
 
 	if m.state == stateEditMeta {
@@ -338,8 +405,9 @@ func (m Model) renderMetaPopupLines(width int) []string {
 	} else {
 		popupLines = append(popupLines,
 			"",
-			"Press 'e' again to edit metadata here.",
-			"Press 'v' to edit metadata in your editor.",
+			"Use ↑/↓ or PgUp/PgDn to scroll fields.",
+			"Press 'e' to edit fields here, 'v' to edit fields in your editor.",
+			"Press 'n' to edit the note in your editor.",
 			"Press Esc to cancel.",
 		)
 	}
@@ -424,20 +492,7 @@ func (m Model) View() string {
 		// rightWidth := m.width / 3 + 10
 		// middleWidth := m.width - leftWidth - rightWidth - 2  // 2 for "│" separators
 
-		separatorWidth := 6                        // " │ " + " │ "
-		leftWidth := int(float64(m.width) * 0.22)  // 22%
-		rightWidth := int(float64(m.width) * 0.33) // 33%
-		middleWidth := m.width - leftWidth - rightWidth - separatorWidth
-
-		if leftWidth < 12 {
-			leftWidth = 12
-		}
-		if middleWidth < 25 {
-			middleWidth = 25
-		}
-		if rightWidth < 25 {
-			rightWidth = 25
-		}
+		leftWidth, middleWidth, rightWidth := m.panelWidths()
 
 		height := m.viewportHeight
 
@@ -520,7 +575,7 @@ func (m Model) metadataPreviewLines(width int) []string {
 			val = "(empty)"
 		}
 		label := metaFieldLabel(i)
-		if strings.EqualFold(label, "Abstract") {
+		if isParagraphMetaField(label) {
 			lines = append(lines, label+":")
 			offsetWidth := width - 2
 			if offsetWidth < 10 {
@@ -533,6 +588,19 @@ func (m Model) metadataPreviewLines(width int) []string {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("%s: %s", label, val))
+	}
+	noteWidth := width - 2
+	if noteWidth < 10 {
+		noteWidth = width
+	}
+	lines = append(lines, "Note:")
+	note := strings.TrimSpace(m.currentNote)
+	if note == "" {
+		lines = append(lines, "  (none - press 'n' to edit in your editor)")
+	} else {
+		for _, wrapped := range wrapTextToWidth(note, noteWidth) {
+			lines = append(lines, "  "+wrapped)
+		}
 	}
 	return lines
 }

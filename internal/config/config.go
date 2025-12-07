@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +19,8 @@ type Config struct {
 	RecentlyOpenedDir   string `json:"recently_opened_dir,omitempty"`
 	RecentlyOpenedLimit int    `json:"recently_opened_limit,omitempty"`
 	Editor              string `json:"editor,omitempty"`
+	PDFViewer           string `json:"pdf_viewer,omitempty"`
+	NotesDir            string `json:"notes_dir,omitempty"`
 }
 
 const (
@@ -88,6 +93,32 @@ func defaultEditor() string {
 	return "vi"
 }
 
+func defaultPDFViewer() string {
+	if v := strings.TrimSpace(os.Getenv("GORAE_PDF_VIEWER")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("PDF_VIEWER")); v != "" {
+		return v
+	}
+	if v := detectSystemPDFViewer(); v != "" {
+		return v
+	}
+	return "xdg-open"
+}
+
+// DefaultPDFViewer exposes the detected viewer so callers can use it as a fallback.
+func DefaultPDFViewer() string {
+	return defaultPDFViewer()
+}
+
+func defaultNotesDir(meta string) string {
+	meta = strings.TrimSpace(meta)
+	if meta == "" {
+		return ""
+	}
+	return filepath.Join(meta, "notes")
+}
+
 func LoadOrInit() (*Config, error) {
 	path, err := defaultConfigPath()
 	if err != nil {
@@ -108,6 +139,9 @@ func LoadOrInit() (*Config, error) {
 			if err := writeConfig(path, &cfg); err != nil {
 				return nil, err
 			}
+		}
+		if err := ensureNotesDirExists(&cfg); err != nil {
+			return nil, err
 		}
 		return &cfg, nil
 	}
@@ -132,6 +166,8 @@ func LoadOrInit() (*Config, error) {
 		RecentlyOpenedDir:   recentOpened,
 		RecentlyOpenedLimit: defaultRecentlyOpenedLimit,
 		Editor:              defaultEditor(),
+		PDFViewer:           defaultPDFViewer(),
+		NotesDir:            defaultNotesDir(meta),
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
@@ -150,12 +186,19 @@ func LoadOrInit() (*Config, error) {
 		return nil, err
 	}
 
+	if err := os.MkdirAll(cfg.NotesDir, 0o755); err != nil {
+		return nil, err
+	}
+
 	if err := writeConfig(path, cfg); err != nil {
 		return nil, err
 	}
 
 	fmt.Println("Config saved to", path)
 	if _, err := cfg.ensureDefaults(); err != nil {
+		return nil, err
+	}
+	if err := ensureNotesDirExists(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -213,6 +256,14 @@ func (c *Config) ensureDefaults() (bool, error) {
 		c.Editor = defaultEditor()
 		changed = true
 	}
+	if strings.TrimSpace(c.PDFViewer) == "" {
+		c.PDFViewer = defaultPDFViewer()
+		changed = true
+	}
+	if strings.TrimSpace(c.NotesDir) == "" {
+		c.NotesDir = defaultNotesDir(c.MetaDir)
+		changed = true
+	}
 	return changed, nil
 }
 
@@ -232,4 +283,50 @@ func upgradeLegacyRecentPath(path string) string {
 	}
 	dir := filepath.Dir(clean)
 	return filepath.Join(dir, defaultRecentlyAddedDirName)
+}
+
+func detectSystemPDFViewer() string {
+	candidates := []string{
+		"zathura",
+		"sioyek",
+		"mupdf",
+		"okular",
+		"evince",
+		"atril",
+		"xdg-open",
+		"open",
+	}
+	for _, name := range candidates {
+		if path, err := exec.LookPath(name); err == nil {
+			viewer := path
+			if viewer == "" {
+				viewer = name
+			}
+			if strings.IndexFunc(viewer, func(r rune) bool {
+				return r == ' ' || r == '\t' || r == '"' || r == '\''
+			}) >= 0 {
+				viewer = strconv.Quote(viewer)
+			}
+			return viewer
+		}
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return "open"
+	case "windows":
+		return "rundll32 url.dll,FileProtocolHandler"
+	default:
+		return "xdg-open"
+	}
+}
+
+func ensureNotesDirExists(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	dir := strings.TrimSpace(cfg.NotesDir)
+	if dir == "" {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
 }

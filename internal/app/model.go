@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -76,7 +78,7 @@ type Model struct {
 
 	meta            *meta.Store   // <── sqlite store
 	metaEditingPath string        // path of file being edited
-	metaFieldIndex  int           // 0:title,1:author,2:venue,3:year,4:abstract
+	metaFieldIndex  int           // 0:title,1:author,2:venue,3:year,...
 	metaDraft       meta.Metadata // draft being edited
 
 	previewText []string
@@ -84,6 +86,9 @@ type Model struct {
 
 	currentMeta     *meta.Metadata
 	currentMetaPath string
+	currentNote     string
+	notesDir        string
+	metaPopupOffset int
 }
 
 var metaFieldLabels = []string{
@@ -91,6 +96,7 @@ var metaFieldLabels = []string{
 	"Author",
 	"Journal/Conference",
 	"Year",
+	"Tag",
 	"Abstract",
 }
 
@@ -116,6 +122,8 @@ func metadataFieldValue(data meta.Metadata, index int) string {
 	case 3:
 		return data.Year
 	case 4:
+		return data.Tag
+	case 5:
 		return data.Abstract
 	default:
 		return ""
@@ -133,6 +141,8 @@ func setMetadataFieldValue(data *meta.Metadata, index int, value string) {
 	case 3:
 		data.Year = value
 	case 4:
+		data.Tag = value
+	case 5:
 		data.Abstract = value
 	}
 }
@@ -156,10 +166,126 @@ func canonicalPath(path string) string {
 	return path
 }
 
+const (
+	panelSeparatorWidth = 6
+	minLeftPanelWidth   = 12
+	minMiddlePanelWidth = 25
+	minRightPanelWidth  = 25
+)
+
+func (m Model) panelWidths() (int, int, int) {
+	if m.width <= 0 {
+		return minLeftPanelWidth, minMiddlePanelWidth, minRightPanelWidth
+	}
+
+	leftPct := 0.22
+	rightPct := 0.33
+	if m.state == stateMetaPreview || m.state == stateEditMeta {
+		leftPct = 0.18
+		rightPct = 0.28
+	}
+
+	left := int(float64(m.width) * leftPct)
+	right := int(float64(m.width) * rightPct)
+
+	if left < minLeftPanelWidth {
+		left = minLeftPanelWidth
+	}
+	if right < minRightPanelWidth {
+		right = minRightPanelWidth
+	}
+
+	middle := m.width - panelSeparatorWidth - left - right
+	if middle < minMiddlePanelWidth {
+		middle = minMiddlePanelWidth
+	}
+
+	total := left + right + middle + panelSeparatorWidth
+	if total > m.width {
+		overflow := total - m.width
+
+		reduceRight := overflow / 2
+		maxReduceRight := right - minRightPanelWidth
+		if maxReduceRight < 0 {
+			maxReduceRight = 0
+		}
+		if reduceRight > maxReduceRight {
+			reduceRight = maxReduceRight
+		}
+		right -= reduceRight
+		overflow -= reduceRight
+
+		reduceLeft := overflow
+		maxReduceLeft := left - minLeftPanelWidth
+		if maxReduceLeft < 0 {
+			maxReduceLeft = 0
+		}
+		if reduceLeft > maxReduceLeft {
+			reduceLeft = maxReduceLeft
+		}
+		left -= reduceLeft
+		overflow -= reduceLeft
+
+		if overflow > 0 {
+			middle -= overflow
+			if middle < minMiddlePanelWidth {
+				middle = minMiddlePanelWidth
+			}
+		}
+	}
+
+	return left, middle, right
+}
+
+func (m *Model) noteFilePath(path string) (string, error) {
+	dir := strings.TrimSpace(m.notesDir)
+	if dir == "" {
+		return "", fmt.Errorf("notes directory not configured")
+	}
+	target := canonicalPath(path)
+	if target == "" {
+		return "", fmt.Errorf("invalid note target")
+	}
+	sum := sha1.Sum([]byte(target))
+	name := hex.EncodeToString(sum[:]) + ".md"
+	return filepath.Join(dir, name), nil
+}
+
+func (m *Model) loadNoteFor(path string) {
+	if path == "" {
+		m.currentNote = ""
+		return
+	}
+	filePath, err := m.noteFilePath(path)
+	if err != nil {
+		m.currentNote = ""
+		return
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			m.currentNote = ""
+			return
+		}
+		m.currentNote = ""
+		return
+	}
+	m.currentNote = string(data)
+}
+
+func (m *Model) refreshCurrentNote() {
+	if m.currentMetaPath == "" {
+		m.currentNote = ""
+		return
+	}
+	m.loadNoteFor(m.currentMetaPath)
+}
+
 func (m *Model) updateCurrentMetadata(path string) {
 	if path == "" || m.meta == nil {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
+		m.currentNote = ""
 		return
 	}
 	canonical := canonicalPath(path)
@@ -167,6 +293,7 @@ func (m *Model) updateCurrentMetadata(path string) {
 	if err != nil || info.IsDir() {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
+		m.currentNote = ""
 		return
 	}
 	if m.currentMetaPath == canonical {
@@ -177,11 +304,13 @@ func (m *Model) updateCurrentMetadata(path string) {
 	if err != nil {
 		m.currentMeta = nil
 		m.currentMetaPath = ""
+		m.currentNote = ""
 		m.setStatus("Failed to load metadata: " + err.Error())
 		return
 	}
 	m.currentMetaPath = canonical
 	m.currentMeta = md
+	m.loadNoteFor(canonical)
 }
 
 func NewModel(cfg *config.Config, store *meta.Store) Model {
@@ -207,6 +336,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		recentlyAddedSyncInt: defaultRecentlyAddedSyncInterval,
 		recentlyOpenedDir:    strings.TrimSpace(cfg.RecentlyOpenedDir),
 		recentlyOpenedLimit:  cfg.RecentlyOpenedLimit,
+		notesDir:             strings.TrimSpace(cfg.NotesDir),
 	}
 	if m.recentlyAddedSyncInt <= 0 {
 		m.recentlyAddedSyncInt = defaultRecentlyAddedSyncInterval
@@ -219,6 +349,17 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	}
 	if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
 		m.setStatus("Recently added sync failed: " + err.Error())
+	}
+	if m.notesDir == "" && strings.TrimSpace(cfg.MetaDir) != "" {
+		m.notesDir = filepath.Join(cfg.MetaDir, "notes")
+	}
+	if m.notesDir != "" && !filepath.IsAbs(m.notesDir) {
+		base := strings.TrimSpace(cfg.MetaDir)
+		if base != "" {
+			m.notesDir = filepath.Join(base, m.notesDir)
+		} else if abs, err := filepath.Abs(m.notesDir); err == nil {
+			m.notesDir = abs
+		}
 	}
 	m.loadEntries()
 	m.updateTextPreview()

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -26,6 +28,11 @@ type configEditFinishedMsg struct {
 type metadataEditFinishedMsg struct {
 	err        error
 	tmpPath    string
+	targetPath string
+}
+
+type noteEditFinishedMsg struct {
+	err        error
 	targetPath string
 }
 
@@ -45,6 +52,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width = msg.Width
 		m.ensureCursorVisible()
+		m.clampMetaPopupOffset()
 		return m, nil
 
 	case configEditFinishedMsg:
@@ -57,6 +65,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case metadataEditFinishedMsg:
 		m.handleMetadataEditorFinished(msg)
+		return m, nil
+
+	case noteEditFinishedMsg:
+		m.handleNoteEditorFinished(msg)
 		return m, nil
 
 	case arxivUpdateMsg:
@@ -244,18 +256,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "e":
 				m.state = stateEditMeta
 				m.metaFieldIndex = 0
+				m.metaPopupOffset = 0
 				m.loadMetaFieldIntoInput()
 				m.input.Focus()
 				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
 				return m, nil
 			case "v":
+				m.metaPopupOffset = 0
 				if cmd := m.launchMetadataEditor(); cmd != nil {
 					return m, cmd
 				}
 				return m, nil
+			case "n":
+				if cmd := m.launchNoteEditor(); cmd != nil {
+					return m, cmd
+				}
+				return m, nil
+			case "up", "k":
+				m.scrollMetaPopup(-1)
+				return m, nil
+			case "down", "j":
+				m.scrollMetaPopup(1)
+				return m, nil
+			case "pgup":
+				step := m.viewportHeight / 2
+				if step < 3 {
+					step = 3
+				}
+				m.scrollMetaPopup(-step)
+				return m, nil
+			case "pgdown":
+				step := m.viewportHeight / 2
+				if step < 3 {
+					step = 3
+				}
+				m.scrollMetaPopup(step)
+				return m, nil
 			case "esc":
 				m.state = stateNormal
 				m.metaEditingPath = ""
+				m.metaPopupOffset = 0
 				m.setStatus("Metadata edit cancelled")
 				return m, nil
 			}
@@ -318,12 +358,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.metaEditingPath = ""
+				m.metaPopupOffset = 0
 				return m, cmd
 
 			case "esc":
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.metaEditingPath = ""
+				m.metaPopupOffset = 0
 				m.setStatus("Metadata edit cancelled")
 				return m, cmd
 			}
@@ -465,7 +507,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clearStatus()
 				m.updateTextPreview() // <── NEW
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
-				if err := exec.Command("zathura", full).Start(); err != nil {
+				if err := m.openPDF(full); err != nil {
 					m.setStatus("Failed to open PDF: " + err.Error())
 				} else {
 					m.recordRecentlyOpened(full)
@@ -659,9 +701,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.metaDraft = draft
 			m.metaFieldIndex = 0
+			m.metaPopupOffset = 0
 			m.input.SetValue("")
 			m.input.Blur()
-			m.setPersistentStatus("Metadata preview: 'e' edit here, 'v' open editor, Esc cancel")
+			m.setPersistentStatus("Metadata preview: 'e' edit fields, 'v' open fields in editor, 'n' edit note, Esc cancel")
 			return m, nil
 
 		case ":":
@@ -670,6 +713,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.CursorEnd()
 			m.input.Focus()
 			m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
+			return m, nil
+
+		case "v":
+			if len(m.entries) == 0 {
+				m.setStatus("No files to select")
+				return m, nil
+			}
+			files := make([]string, 0, len(m.entries))
+			for _, entry := range m.entries {
+				isDir := entry.IsDir()
+				if info, err := entry.Info(); err == nil {
+					isDir = info.IsDir()
+				}
+				if isDir {
+					continue
+				}
+				full := filepath.Join(m.cwd, entry.Name())
+				files = append(files, full)
+			}
+			if len(files) == 0 {
+				m.selected = make(map[string]bool)
+				m.setStatus("No files to select")
+				return m, nil
+			}
+			allSelected := len(m.selected) == len(files)
+			if allSelected {
+				for _, full := range files {
+					if !m.selected[full] {
+						allSelected = false
+						break
+					}
+				}
+			}
+			if allSelected {
+				for k := range m.selected {
+					delete(m.selected, k)
+				}
+				m.setStatus("Selection cleared")
+				return m, nil
+			}
+			if m.selected == nil {
+				m.selected = make(map[string]bool, len(files))
+			} else {
+				for k := range m.selected {
+					delete(m.selected, k)
+				}
+			}
+			for _, full := range files {
+				m.selected[full] = true
+			}
+			m.setStatus(fmt.Sprintf("Selected %d file(s).", len(files)))
 			return m, nil
 
 		}
@@ -693,6 +787,8 @@ func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
 	m.state = stateNormal
 	m.metaEditingPath = ""
 	m.input.SetValue("")
+	m.metaPopupOffset = 0
+	m.metaPopupOffset = 0
 
 	if msg.err != nil {
 		m.setStatus("Metadata editor failed: " + msg.err.Error())
@@ -730,6 +826,18 @@ func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
 	m.currentMetaPath = ""
 	m.resortAndPreserveSelection()
 	m.setStatus("Metadata saved")
+}
+
+func (m *Model) handleNoteEditorFinished(msg noteEditFinishedMsg) {
+	if msg.err != nil {
+		m.setStatus("Note edit failed: " + msg.err.Error())
+		return
+	}
+	target := canonicalPath(msg.targetPath)
+	if target != "" && target == m.currentMetaPath {
+		m.refreshCurrentNote()
+	}
+	m.setStatus("Note saved")
 }
 
 func (m *Model) launchMetadataEditor() tea.Cmd {
@@ -778,12 +886,55 @@ func (m *Model) launchMetadataEditor() tea.Cmd {
 	})
 }
 
+func (m *Model) launchNoteEditor() tea.Cmd {
+	target := strings.TrimSpace(m.metaEditingPath)
+	if target == "" {
+		m.setStatus("No metadata target selected")
+		return nil
+	}
+	filePath, err := m.noteFilePath(target)
+	if err != nil {
+		m.setStatus("Failed to resolve note path: " + err.Error())
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		m.setStatus("Failed to prepare note directory: " + err.Error())
+		return nil
+	}
+	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+		initial := []byte("")
+		if err := os.WriteFile(filePath, initial, 0o644); err != nil {
+			m.setStatus("Failed to initialize note: " + err.Error())
+			return nil
+		}
+	}
+	editor := m.configEditor()
+	cmd := exec.Command(editor, filePath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fileName := filepath.Base(target)
+	if fileName == "" {
+		fileName = target
+	}
+	m.setPersistentStatus(fmt.Sprintf("Editing note for %s with %s (exit editor to return)", fileName, editor))
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return noteEditFinishedMsg{
+			err:        err,
+			targetPath: target,
+		}
+	})
+}
+
 type metadataEditorFile struct {
 	Title    string `json:"title"`
 	Author   string `json:"author"`
 	Venue    string `json:"venue"`
 	Year     string `json:"year"`
 	Abstract string `json:"abstract"`
+	Tag      string `json:"tag"`
 }
 
 func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
@@ -793,6 +944,7 @@ func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
 		Venue:    md.Venue,
 		Year:     md.Year,
 		Abstract: md.Abstract,
+		Tag:      md.Tag,
 	}
 }
 
@@ -823,8 +975,121 @@ func parseMetadataEditorData(raw []byte, path string) (meta.Metadata, error) {
 		Venue:    strings.TrimSpace(data.Venue),
 		Year:     strings.TrimSpace(data.Year),
 		Abstract: strings.TrimSpace(data.Abstract),
+		Tag:      strings.TrimSpace(data.Tag),
 	}
 	return md, nil
+}
+
+func (m *Model) openPDF(path string) error {
+	viewer := ""
+	if m.cfg != nil {
+		viewer = strings.TrimSpace(m.cfg.PDFViewer)
+	}
+	if viewer == "" {
+		viewer = strings.TrimSpace(config.DefaultPDFViewer())
+	}
+	parts, err := splitCommandLine(viewer)
+	if err != nil {
+		return err
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("no PDF viewer configured")
+	}
+	args := append([]string{}, parts[1:]...)
+	args = append(args, path)
+	cmd := exec.Command(parts[0], args...)
+	return cmd.Start()
+}
+
+func splitCommandLine(input string) ([]string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, nil
+	}
+	var parts []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+
+	appendCurrent := func() {
+		if current.Len() > 0 {
+			parts = append(parts, current.String())
+			current.Reset()
+		}
+	}
+
+	for _, r := range input {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\' && quote != '\'':
+			escaped = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case unicode.IsSpace(r):
+			appendCurrent()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	if escaped {
+		return nil, fmt.Errorf("unterminated escape in command")
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quote in command")
+	}
+	appendCurrent()
+	return parts, nil
+}
+
+func (m *Model) scrollMetaPopup(delta int) {
+	if delta == 0 {
+		return
+	}
+	if m.state != stateMetaPreview && m.state != stateEditMeta {
+		m.metaPopupOffset = 0
+		return
+	}
+	m.metaPopupOffset += delta
+	if m.metaPopupOffset < 0 {
+		m.metaPopupOffset = 0
+	}
+	m.clampMetaPopupOffset()
+}
+
+func (m *Model) clampMetaPopupOffset() {
+	if m.state != stateMetaPreview && m.state != stateEditMeta {
+		m.metaPopupOffset = 0
+		return
+	}
+	_, middleWidth, _ := m.panelWidths()
+	if middleWidth <= 0 || m.viewportHeight <= 0 {
+		m.metaPopupOffset = 0
+		return
+	}
+	lines := m.metaPopupContentLines(middleWidth)
+	if len(lines) == 0 {
+		m.metaPopupOffset = 0
+		return
+	}
+	maxOffset := len(lines) - m.viewportHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.metaPopupOffset > maxOffset {
+		m.metaPopupOffset = maxOffset
+	}
+	if m.metaPopupOffset < 0 {
+		m.metaPopupOffset = 0
+	}
 }
 
 func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
@@ -866,7 +1131,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit metadata, v edit metadata in editor, :arxiv <id> [files...] fetch from arXiv",
+			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, :arxiv <id> fetch from arXiv",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config shows/edits the config file",
@@ -915,11 +1180,20 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 			return nil
 		}
 		editor := m.configEditor()
+		viewer := ""
+		if m.cfg != nil {
+			viewer = strings.TrimSpace(m.cfg.PDFViewer)
+		}
+		if viewer == "" {
+			viewer = strings.TrimSpace(config.DefaultPDFViewer())
+		}
 		lines := []string{
 			"Config file:",
 			"  " + path,
 			"Configured editor:",
 			"  " + editor,
+			"Configured PDF viewer:",
+			"  " + viewer,
 			"Use :config edit to open it.",
 		}
 		m.setCommandOutput(lines)

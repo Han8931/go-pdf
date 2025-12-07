@@ -26,9 +26,20 @@ func (m *Model) loadEntries() {
 
 	// hide dotfiles and non-PDF files (but keep directories)
 	filtered := make([]fs.DirEntry, 0, len(ents))
+	notesDir := strings.TrimSpace(m.notesDir)
+	noteAbs := ""
+	if notesDir != "" {
+		noteAbs = canonicalPath(notesDir)
+	}
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
+		}
+		if noteAbs != "" && e.IsDir() {
+			full := filepath.Join(m.cwd, e.Name())
+			if canonicalPath(full) == noteAbs {
+				continue
+			}
 		}
 
 		if !e.IsDir() {
