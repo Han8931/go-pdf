@@ -40,6 +40,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 TODO
 - arxiv command with selections
 - Search function
+- [Text extraction, pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
 - Yank bibtex / line style
 - Bookmark / Favorite
 - Page count
