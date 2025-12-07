@@ -41,6 +41,7 @@ TODO
 - arxiv command with selections
 - Search function
 - [Text extraction, pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
+    - [golang lib](https://github.com/sukeesh/markitdown-go?tab=readme-ov-file)
 - Yank bibtex / line style
 - Bookmark / Favorite
 - Page count
