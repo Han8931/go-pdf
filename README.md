@@ -48,7 +48,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
 
 TODO
-- In the `recently_opened` directory. I wish there is no duplicates. Also, I wish the list is sorted by the order of time of user opening them. 
+- Update reading state to reading of a file as I opened it. 
 - Cursor position after going back to the parent dir
 - UI improvement
 - logo command
