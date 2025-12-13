@@ -9,11 +9,24 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"gorae/internal/meta"
 )
 
 func (m *Model) loadEntries() {
 	if err := m.maybeSyncRecentlyAddedDir(false); err != nil {
 		m.setStatus("Recently added sync failed: " + err.Error())
+	}
+	cwdCanonical := canonicalPath(m.cwd)
+	if m.recentlyOpenedDirCanonical != "" && cwdCanonical == m.recentlyOpenedDirCanonical {
+		m.cwdIsRecentlyOpened = true
+	} else {
+		m.cwdIsRecentlyOpened = false
+	}
+	if m.recentlyAddedDirCanonical != "" && cwdCanonical == m.recentlyAddedDirCanonical {
+		m.cwdIsRecentlyAdded = true
+	} else {
+		m.cwdIsRecentlyAdded = false
 	}
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
@@ -51,6 +64,7 @@ func (m *Model) loadEntries() {
 		filtered = append(filtered, e)
 	}
 
+	m.ensureDefaultReadingState(filtered)
 	m.entries = filtered
 	if m.cursor >= len(m.entries) {
 		m.cursor = 0
@@ -144,7 +158,7 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 			m.entryTitles[full] = m.resolveEntryTitle(ctx, full, e)
 			continue
 		}
-		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		name := m.normalizedEntryBase(e.Name(), full)
 		m.entryTitles[full] = fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
 	}
 }
@@ -162,7 +176,7 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	if err == nil {
 		baseName = info.Name()
 	}
-	name := strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	name := m.normalizedEntryBase(baseName, fullPath)
 	if m.meta == nil {
 		return fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
 	}
@@ -222,7 +236,7 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 		if err == nil {
 			baseName = info.Name()
 		}
-		base := strings.TrimSuffix(baseName, filepath.Ext(baseName))
+		base := m.normalizedEntryBase(baseName, full)
 		data := entrySortInfo{title: base}
 		if useMeta {
 			path := canonicalPath(full)
@@ -298,8 +312,8 @@ func (m *Model) lookupSortInfo(entry fs.DirEntry, info map[string]entrySortInfo)
 			return data
 		}
 	}
-	base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-	return entrySortInfo{title: base}
+	full := filepath.Join(m.cwd, entry.Name())
+	return entrySortInfo{title: m.normalizedEntryBase(entry.Name(), full)}
 }
 
 func parseYearValue(year string) int {
@@ -330,4 +344,52 @@ func (e entrySortInfo) display() string {
 		year = "-"
 	}
 	return fmt.Sprintf("[%s][%s][%s]", status, year, title)
+}
+
+func (m *Model) normalizedEntryBase(name, fullPath string) string {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded) {
+		if canonical := canonicalPath(fullPath); canonical != "" {
+			targetName := filepath.Base(canonical)
+			if targetName != "" {
+				base = strings.TrimSuffix(targetName, filepath.Ext(targetName))
+			}
+		} else if m.cwdIsRecentlyOpened {
+			base = stripRecentLinkPrefix(base)
+		}
+	}
+	if base == "" {
+		base = "_"
+	}
+	return base
+}
+
+func (m *Model) ensureDefaultReadingState(entries []fs.DirEntry) {
+	if m.meta == nil || len(entries) == 0 {
+		return
+	}
+	ctx := context.Background()
+	for _, entry := range entries {
+		isDir := entry.IsDir()
+		if info, err := entry.Info(); err == nil {
+			isDir = info.IsDir()
+		}
+		if isDir {
+			continue
+		}
+		full := filepath.Join(m.cwd, entry.Name())
+		canonical := canonicalPath(full)
+		if canonical == "" {
+			continue
+		}
+		md, err := m.meta.Get(ctx, canonical)
+		if err != nil || md != nil {
+			continue
+		}
+		record := meta.Metadata{
+			Path:         canonical,
+			ReadingState: readingStateUnread,
+		}
+		_ = m.meta.Upsert(ctx, &record)
+	}
 }

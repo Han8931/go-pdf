@@ -24,14 +24,14 @@ func (m *Model) maybeSyncRecentlyAddedDir(force bool) error {
 			return nil
 		}
 	}
-	if err := syncRecentlyAddedDirectory(m.root, m.recentlyAddedDir, m.recentlyAddedMaxAge, m.meta); err != nil {
+	if err := syncRecentlyAddedDirectory(m.root, m.recentlyAddedDir, m.recentlyAddedMaxAge, m.meta, m.recentlyOpenedDir); err != nil {
 		return err
 	}
 	m.lastRecentlyAddedSync = time.Now()
 	return nil
 }
 
-func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, store *meta.Store) error {
+func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, store *meta.Store, openedDir string) error {
 	if root == "" || recentDir == "" || maxAge <= 0 {
 		return nil
 	}
@@ -43,6 +43,12 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 	recentAbs, err := filepath.Abs(recentDir)
 	if err != nil {
 		return err
+	}
+	openedAbs := ""
+	if openedDir != "" {
+		if abs, err := filepath.Abs(openedDir); err == nil {
+			openedAbs = abs
+		}
 	}
 
 	cutoff := time.Now().Add(-maxAge)
@@ -57,6 +63,12 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 		}
 
 		if path == recentAbs {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if openedAbs != "" && path == openedAbs {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

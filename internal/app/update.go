@@ -709,10 +709,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clearStatus()
 				m.updateTextPreview() // <── NEW
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
-				if err := m.openPDF(full); err != nil {
+				openPath := full
+				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
+					openPath = canonicalPath(full)
+				}
+				if err := m.openPDF(openPath); err != nil {
 					m.setStatus("Failed to open PDF: " + err.Error())
 				} else {
-					m.recordRecentlyOpened(full)
+					m.recordRecentlyOpened(openPath)
 				}
 			} else {
 				m.setStatus("Not a PDF")

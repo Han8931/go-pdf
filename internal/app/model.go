@@ -91,32 +91,35 @@ func (q quickFilterMode) labelLower() string {
 }
 
 type Model struct {
-	cfg     *config.Config
-	root    string
-	cwd     string
-	entries []fs.DirEntry
-	cursor  int
-	err     error
+	cfg                 *config.Config
+	root                string
+	cwd                 string
+	cwdIsRecentlyOpened bool
+	cwdIsRecentlyAdded  bool
+	entries             []fs.DirEntry
+	cursor              int
+	err                 error
 
-	selected              map[string]bool
-	cut                   []string
-	status                string
-	statusAt              time.Time
-	sticky                bool
-	commandOutput         []string
-	commandOutputOffset   int
-	commandOutputPinned   bool
-	entryTitles           map[string]string
-	sortMode              sortMode
-	awaitingSort          bool
-	awaitingQuickFilter   bool
-	recentlyAddedDir      string
-	recentlyAddedMaxAge   time.Duration
-	recentlyAddedSyncInt  time.Duration
-	lastRecentlyAddedSync time.Time
-
-	recentlyOpenedDir   string
-	recentlyOpenedLimit int
+	selected                   map[string]bool
+	cut                        []string
+	status                     string
+	statusAt                   time.Time
+	sticky                     bool
+	commandOutput              []string
+	commandOutputOffset        int
+	commandOutputPinned        bool
+	entryTitles                map[string]string
+	sortMode                   sortMode
+	awaitingSort               bool
+	awaitingQuickFilter        bool
+	recentlyAddedDir           string
+	recentlyAddedDirCanonical  string
+	recentlyAddedMaxAge        time.Duration
+	recentlyAddedSyncInt       time.Duration
+	lastRecentlyAddedSync      time.Time
+	recentlyOpenedDir          string
+	recentlyOpenedDirCanonical string
+	recentlyOpenedLimit        int
 
 	viewportStart  int
 	viewportHeight int
@@ -422,8 +425,16 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	if m.recentlyAddedDir != "" && !filepath.IsAbs(m.recentlyAddedDir) {
 		m.recentlyAddedDir = filepath.Join(root, m.recentlyAddedDir)
 	}
+	if m.recentlyAddedDir != "" {
+		m.recentlyAddedDir = canonicalPath(m.recentlyAddedDir)
+		m.recentlyAddedDirCanonical = m.recentlyAddedDir
+	}
 	if m.recentlyOpenedDir != "" && !filepath.IsAbs(m.recentlyOpenedDir) {
 		m.recentlyOpenedDir = filepath.Join(root, m.recentlyOpenedDir)
+	}
+	if m.recentlyOpenedDir != "" {
+		m.recentlyOpenedDir = canonicalPath(m.recentlyOpenedDir)
+		m.recentlyOpenedDirCanonical = m.recentlyOpenedDir
 	}
 	if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
 		m.setStatus("Recently added sync failed: " + err.Error())

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"gorae/internal/meta"
@@ -34,6 +35,7 @@ func updateRecentlyOpenedDirectory(dest, openedPath string, limit int, store *me
 	if err != nil {
 		return err
 	}
+	targetAbs = canonicalPath(targetAbs)
 
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return err
@@ -44,7 +46,6 @@ func updateRecentlyOpenedDirectory(dest, openedPath string, limit int, store *me
 		return err
 	}
 
-	var existingLink string
 	for _, entry := range dirEntries {
 		linkPath := filepath.Join(destAbs, entry.Name())
 		info, err := os.Lstat(linkPath)
@@ -62,22 +63,12 @@ func updateRecentlyOpenedDirectory(dest, openedPath string, limit int, store *me
 			target = filepath.Join(destAbs, target)
 		}
 		if filepath.Clean(target) == filepath.Clean(targetAbs) {
-			existingLink = linkPath
-			break
+			_ = os.Remove(linkPath)
 		}
 	}
 
-	if existingLink != "" {
-		now := time.Now()
-		_ = os.Chtimes(existingLink, now, now)
-		return trimRecentlyOpened(destAbs, limit)
-	}
-
 	title, year := lookupMetadataLabels(store, targetAbs)
-	linkName, err := nextAvailableLinkName(destAbs, filepath.Base(targetAbs), title, year)
-	if err != nil {
-		return err
-	}
+	linkName := recentLinkName(filepath.Base(targetAbs), title, year, time.Now())
 	linkPath := filepath.Join(destAbs, linkName)
 	relTarget, err := filepath.Rel(filepath.Dir(linkPath), targetAbs)
 	if err != nil {
@@ -98,9 +89,11 @@ func trimRecentlyOpened(dest string, limit int) error {
 
 	type linkInfo struct {
 		name    string
+		ts      time.Time
+		hasTS   bool
 		modTime time.Time
 	}
-	var links []linkInfo
+	links := make([]linkInfo, 0, len(dirEntries))
 	for _, entry := range dirEntries {
 		path := filepath.Join(dest, entry.Name())
 		info, err := os.Lstat(path)
@@ -110,14 +103,31 @@ func trimRecentlyOpened(dest string, limit int) error {
 		if info.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
-		links = append(links, linkInfo{name: entry.Name(), modTime: info.ModTime()})
+		ts, ok := parseRecentLinkTimestamp(entry.Name())
+		links = append(links, linkInfo{
+			name:    entry.Name(),
+			ts:      ts,
+			hasTS:   ok,
+			modTime: info.ModTime(),
+		})
 	}
 	if len(links) <= limit {
 		return nil
 	}
+
 	sort.Slice(links, func(i, j int) bool {
+		if links[i].hasTS && links[j].hasTS {
+			if !links[i].ts.Equal(links[j].ts) {
+				return links[i].ts.Before(links[j].ts)
+			}
+			return links[i].name < links[j].name
+		}
+		if links[i].hasTS != links[j].hasTS {
+			return !links[i].hasTS
+		}
 		return links[i].modTime.Before(links[j].modTime)
 	})
+
 	excess := len(links) - limit
 	for i := 0; i < excess; i++ {
 		_ = os.Remove(filepath.Join(dest, links[i].name))
@@ -125,20 +135,38 @@ func trimRecentlyOpened(dest string, limit int) error {
 	return nil
 }
 
-func nextAvailableLinkName(dir, baseName, title, year string) (string, error) {
+const recentLinkTimestampLayout = "20060102T150405.000000000Z"
+
+func recentLinkName(baseName, title, year string, openedAt time.Time) string {
 	base := buildLinkBase(baseName, title, year)
-	name := base
-	suffix := 2
-	for {
-		path := filepath.Join(dir, name)
-		_, err := os.Lstat(path)
-		if os.IsNotExist(err) {
-			return name, nil
-		}
-		if err != nil {
-			return "", err
-		}
-		name = appendNumericSuffix(base, suffix)
-		suffix++
+	ts := openedAt.UTC().Format(recentLinkTimestampLayout)
+	return fmt.Sprintf("%s-%s", ts, base)
+}
+
+func parseRecentLinkTimestamp(name string) (time.Time, bool) {
+	idx := strings.IndexByte(name, '-')
+	if idx <= 0 {
+		return time.Time{}, false
 	}
+	tsStr := name[:idx]
+	ts, err := time.Parse(recentLinkTimestampLayout, tsStr)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
+func stripRecentLinkPrefix(name string) string {
+	idx := strings.IndexByte(name, '-')
+	if idx <= 0 {
+		return name
+	}
+	if _, ok := parseRecentLinkTimestamp(name); !ok {
+		return name
+	}
+	trimmed := name[idx+1:]
+	if trimmed == "" {
+		return name
+	}
+	return trimmed
 }
