@@ -1305,7 +1305,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
-			"  Config     : :config shows/edits the config file",
+			"  Config     : :config edits config, :config show displays info, :config editor <cmd> sets editor",
 			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
 		m.setCommandOutput(help)
@@ -1347,54 +1347,93 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 
 func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 	if len(args) == 0 {
-		path, err := config.Path()
-		if err != nil {
-			m.setStatus("Failed to resolve config path: " + err.Error())
-			return nil
-		}
-		editor := m.configEditor()
-		viewer := ""
-		if m.cfg != nil {
-			viewer = strings.TrimSpace(m.cfg.PDFViewer)
-		}
-		if viewer == "" {
-			viewer = strings.TrimSpace(config.DefaultPDFViewer())
-		}
-		lines := []string{
-			"Config file:",
-			"  " + path,
-			"Configured editor:",
-			"  " + editor,
-			"Configured PDF viewer:",
-			"  " + viewer,
-			"Use :config edit to open it.",
-		}
-		m.setCommandOutput(lines)
-		m.setPersistentStatus("Config path displayed (use :clear to hide)")
-		return nil
+		return m.launchConfigEditor()
 	}
 
 	sub := strings.ToLower(args[0])
 	switch sub {
 	case "edit":
-		path, err := config.Path()
-		if err != nil {
-			m.setStatus("Failed to resolve config path: " + err.Error())
-			return nil
-		}
-		editor := m.configEditor()
-		cmd := exec.Command(editor, path)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		m.setPersistentStatus(fmt.Sprintf("Editing config with %s (exit editor to return)", editor))
-		return tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return configEditFinishedMsg{err: err}
-		})
+		return m.launchConfigEditor()
+	case "show":
+		m.displayConfigSummary()
+		return nil
+	case "editor":
+		return m.handleEditorConfigCommand(args[1:])
 	default:
 		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
 		return nil
 	}
+}
+
+func (m *Model) launchConfigEditor() tea.Cmd {
+	path, err := config.Path()
+	if err != nil {
+		m.setStatus("Failed to resolve config path: " + err.Error())
+		return nil
+	}
+	editor := m.configEditor()
+	cmd := exec.Command(editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	m.setPersistentStatus(fmt.Sprintf("Editing config with %s (exit editor to return)", editor))
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return configEditFinishedMsg{err: err}
+	})
+}
+
+func (m *Model) displayConfigSummary() {
+	path, err := config.Path()
+	if err != nil {
+		m.setStatus("Failed to resolve config path: " + err.Error())
+		return
+	}
+	editor := m.configEditor()
+	viewer := ""
+	if m.cfg != nil {
+		viewer = strings.TrimSpace(m.cfg.PDFViewer)
+	}
+	if viewer == "" {
+		viewer = strings.TrimSpace(config.DefaultPDFViewer())
+	}
+	lines := []string{
+		"Config file:",
+		"  " + path,
+		"Configured editor:",
+		"  " + editor,
+		"Configured PDF viewer:",
+		"  " + viewer,
+		"Use :config to edit it or :config editor <cmd> to change the editor.",
+	}
+	m.setCommandOutput(lines)
+	m.setPersistentStatus("Config info displayed (use :clear to hide)")
+}
+
+func (m *Model) handleEditorConfigCommand(args []string) tea.Cmd {
+	if len(args) == 0 {
+		m.setStatus(fmt.Sprintf("Current editor: %s (use :config editor <cmd> to change)", m.configEditor()))
+		return nil
+	}
+	editor := strings.TrimSpace(strings.Join(args, " "))
+	if editor == "" {
+		m.setStatus("Editor command cannot be empty")
+		return nil
+	}
+	if m.cfg == nil {
+		cfg, err := config.LoadOrInit()
+		if err != nil {
+			m.setStatus("Failed to load config: " + err.Error())
+			return nil
+		}
+		m.cfg = cfg
+	}
+	m.cfg.Editor = editor
+	if err := config.Save(m.cfg); err != nil {
+		m.setStatus("Failed to update editor: " + err.Error())
+		return nil
+	}
+	m.setStatus(fmt.Sprintf("Configured editor set to %s", editor))
+	return nil
 }
 
 func (m *Model) configEditor() string {

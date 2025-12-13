@@ -16,9 +16,9 @@ go build -o gorae
 
 ## Configuration
 
-On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME}/gorae/config.json`). Edit it via `:config edit` to tweak paths and behavior. Two useful keys:
+On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME}/gorae/config.json`). Edit it via `:config` to tweak paths and behavior. Use `:config show` to print the current paths and `:config editor <cmd>` (e.g. `:config editor vim`) to change the editor without opening the JSON file. Two useful keys:
 
-- `editor`: command used when pressing `:config edit` or editing metadata
+- `editor`: command used when pressing `:config`, editing metadata, or editing notes
 - `pdf_viewer`: command used to open PDFs. Provide the binary plus optional arguments; the PDF path is appended automatically. Quotes are supported and required if your command contains spaces, e.g. `"pdf_viewer": "\"C:\\\\Program Files\\\\SumatraPDF\\\\SumatraPDF.exe\""`
 - `notes_dir`: directory where per-PDF note files are stored (defaults to `${meta_dir}/notes`). Files are regular text/Markdown so you can sync or back them up separately.
 

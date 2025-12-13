@@ -212,6 +212,27 @@ func writeConfig(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// Save persists the provided configuration to disk, ensuring directories exist first.
+func Save(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	path, err := defaultConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if _, err := cfg.ensureDefaults(); err != nil {
+		return err
+	}
+	if err := ensureNotesDirExists(cfg); err != nil {
+		return err
+	}
+	return writeConfig(path, cfg)
+}
+
 func (c *Config) ensureDefaults() (bool, error) {
 	changed := false
 	if c == nil {
