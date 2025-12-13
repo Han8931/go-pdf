@@ -43,6 +43,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
 
 TODO
+- [Text extraction, pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
 - Yank bibtex / line style
 - Bookmark / Favorite
 - Cursor position after going back to the parent dir
@@ -60,3 +61,10 @@ AI features:
 - Knowledge Graphs
 - RAG
 - Prompt management
+- 
+
+## [Bangudae Petroglyphs](https://en.wikipedia.org/wiki/Bangudae_Petroglyphs)
+
+[Pictures](https://www.khan.co.kr/article/202007080300025)
+The world's earliest known depictions of whale hunting are found in the Bangudae Petroglyphs in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
+
