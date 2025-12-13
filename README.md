@@ -1,4 +1,6 @@
 
+## Install 
+
 ```sh
 go mod init gorae
 go mod tidy
@@ -10,16 +12,6 @@ Build a binary
 go build -o gorae
 ./gorae
 ./gorae -root ~/Documents/Papers
-```
-
-
-
-```sh
-sudo pacman -S noto-fonts-emoji
-```
-
-```sh
-sudo apt install fonts-noto-color-emoji
 ```
 
 ## Configuration
@@ -51,16 +43,20 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
 
 TODO
-- arxiv command with selections
 - Yank bibtex / line style
 - Bookmark / Favorite
-- Page count
 - Cursor position after going back to the parent dir
 - UI improvement
 - logo command
 - Command autocomplete
+- Command history by up/down arrows
 - Screen renew or update key or auto
+- Page count
 
 AI features:
 - AI tag
-- 
+- AI Summary
+- Extract texts
+- Knowledge Graphs
+- RAG
+- Prompt management
