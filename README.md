@@ -4,7 +4,7 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-Gorae (*고래*, *whale*) is a cozy TUI librarian for your PDFs. It watches a folder, keeps metadata in sync, and gives you quick search/favorite/to-read queues so you can swim through papers with joy. I hope the app makes your reading life calmer and more fun.
+Gorae (*고래*, *whale*) is a cozy TUI librarian for your PDFs—built for Vim/CLI/TUI lovers who want to stay in the terminal, keep metadata in sync, and enjoy quick search/favorite/to-read queues.
 
 **Highlights**
 - Fast file browser with metadata-aware favorites, to-read list, and reading states.
@@ -58,13 +58,28 @@ install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
 
 After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library). One command is all it takes to start browsing your collection.
 
+## Uninstall
+
+1. Delete the binary you installed (default `~/.local/bin/gorae` on Linux or `/usr/local/bin/gorae` on macOS).
+2. Remove the config/data folders if you no longer need them:
+
+   ```sh
+   rm -rf ~/.config/gorae    # config + theme
+   rm -rf ~/.local/share/gorae   # metadata store, notes, db
+   ```
+
+That's it—you can re-clone and reinstall at any time.
+
 ## Everyday use
 
-- `f` = toggle Favorite, `t` = toggle To-read, `r` = cycle reading state.
+- `f` = toggle Favorite, `t` = toggle To-read, `r` = cycle reading state (unread → reading → read).
 - `y` copies BibTeX, `n` edits notes, `e`/`v` open metadata editors.
-- `/` searches, `F`/`T`/`g r|u|d` open the smart lists (favorites, to-read, reading states).
-- `:theme reload` reapplies your `theme.toml` changes, `:theme show` prints the active theme path.
+- Navigate files with Vim-style motion: `j/k` move, `h` goes up a directory, `l` enters, space toggles selection. Support arrow keys too. 
+- `a` creates a directory, `d` cuts selected files, 
+- `/` searches (use flags like `-t title`, `-a author`, `-y year`, `-c content`), 
+- `F`/`T` open smart lists (favorites, to-read).
 - `:help` inside the app lists every command.
+- `config` opens the config file.
 
 For deeper instructions (config, themes, metadata, search tips, helper folders, etc.) read **[docs/user-guide.md](docs/user-guide.md)**. Prefer a different look? Grab one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and point `config.theme_path` at it or copy it to `~/.config/gorae/theme.toml`.
 
@@ -82,7 +97,6 @@ AI features:
 
 ## [Bangudae Petroglyphs](https://en.wikipedia.org/wiki/Bangudae_Petroglyphs)
 
-[Pictures](https://www.khan.co.kr/article/202007080300025)
-The world's earliest known depictions of whale hunting are found in the Bangudae Petroglyphs in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
+The world's earliest known depictions of whale hunting are found in the [Bangudae Petroglyphs (picture link)](https://www.khan.co.kr/article/202007080300025) in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
 
 ## Acknowledgement
