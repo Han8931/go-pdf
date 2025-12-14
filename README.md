@@ -1,6 +1,8 @@
 # Gorae
 
-![Gorae logo](gorae.svg)
+<p align="center">
+  <img src="gorae.svg" alt="Gorae logo" width="180">
+</p>
 
 Gorae (*고래*, *whale*) is a cozy TUI librarian for your PDFs. It watches a folder, keeps metadata in sync, and gives you quick search/favorite/to-read queues so you can swim through papers with joy. I hope the app makes your reading life calmer and more fun.
 
