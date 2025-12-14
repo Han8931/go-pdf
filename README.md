@@ -4,44 +4,64 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-Gorae (*고래*, *whale*) is a cozy TUI librarian for your PDFs—built for Vim/CLI/TUI lovers who want to stay in the terminal, keep metadata in sync, and enjoy quick search/favorite/to-read queues.
+**Gorae** (*고래*, *whale*) is a cozy TUI librarian for your PDFs—built for Vim/CLI/TUI lovers who want to stay in the terminal, keep metadata in sync, and enjoy quick search plus favorite/to-read queues.
 
-**Highlights**
+> The Gorae logo is inspired by the Bangudae Petroglyphs (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The simple "glyph-like" whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—just like a cozy terminal app.
+
+## Highlights
+
 - Fast file browser with metadata-aware favorites, to-read list, and reading states.
 - Search across content or metadata with instant previews/snippets.
 - In-app metadata editor, arXiv importer, and BibTeX copy.
 - Themeable UI (colors, glyphs, borders) plus helper folders you can browse in any file manager.
 
-## Quick install
+## Demo
 
-1. Install Go 1.21+ from [go.dev](https://go.dev/dl/).
-2. Clone this repository:
+<!-- TODO: Add a screenshot / GIF / asciinema link -->
 
-   ```sh
-   git clone https://github.com/Han8931/gorae.git
-   cd gorae
+## Install
+
+### Requirements
+
+**Required**
+- Go 1.21+
+- Poppler CLI tools: `pdftotext`, `pdfinfo`
+
+**Optional (recommended)**
+- A fast PDF viewer (Zathura recommended below)
+- OCR / AI features (planned)
+
+Install prerequisites:
+- macOS: `brew install golang poppler`
+- Debian/Ubuntu: `sudo apt install golang-go poppler-utils`
+- Arch: `sudo pacman -S go poppler`
+
+### Quick install (script)
+
+1. Clone this repository:
+
+```sh
+git clone https://github.com/Han8931/gorae.git
+cd gorae
+```
+
+2. Run the helper script (default path: `~/.local/bin/gorae` on Linux, `/usr/local/bin/gorae` on macOS):
+
+```sh
+./install.sh
+
+# or choose another destination via env var or first argument
+GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
+./install.sh ~/bin/gorae
    ```
 
-3. Run the helper script (default path: `~/.local/bin/gorae` on Linux, `/usr/local/bin/gorae` on macOS):
-
-   ```sh
-   ./install.sh
-   # choose another destination via env var or first argument
-   GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
-   ./install.sh ~/bin/gorae
-   ```
-
-Once the script finishes, ensure the destination directory is on your `PATH`, then launch the app with:
+3. Ensure the destination directory is on your `PATH`, then launch:
 
 ```sh
 gorae        # optionally: gorae -root /path/to/Papers
 ```
 
-## Platform support
-
-Gorae is tested on macOS (Apple Silicon + Intel) and common Linux distros including Arch Linux and Debian/Ubuntu. As long as Go 1.21+ and the Poppler CLI tools (`pdftotext`, `pdfinfo`) are available, the TUI runs the same everywhere. Use `brew install golang poppler`, `sudo apt install golang-go poppler-utils`, or `sudo pacman -S go poppler` to grab the prerequisites on your platform.
-
-## Manual install
+### Manual install
 
 ```sh
 git clone https://github.com/Han8931/gorae.git
@@ -56,7 +76,79 @@ go build -o gorae ./cmd/gorae
 install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
 ```
 
-After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library). One command is all it takes to start browsing your collection.
+After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library).
+
+## Everyday use
+
+> For deeper instructions, read **[docs/user-guide.md](docs/user-guide.md)** or run `:help`.
+
+| Action             | Key       |
+| ------------------ | --------- |
+| Move               | `j/k`     |
+| Enter dir / up     | `l` / `h` |
+| Select             | `Space`   |
+| Favorite / To-read | `f` / `t` |
+| Reading state      | `r`       |
+| Search             | `/`       |
+| Help               | `:help`   |
+
+> Arrow keys are also supported.
+
+### Search tips
+
+Search (`/`) with flags like:
+
+* `-t [title]`
+* `-a [author]`
+* `-y [year]`
+* `-c [content]`
+
+## Config & themes
+
+Gorae stores configuration and user data in standard locations:
+
+* Config + theme:
+  * `~/.config/gorae/`
+  * `~/.config/gorae/theme.toml`
+* Data (metadata DB, notes, cache):
+  * `~/.local/share/gorae/`
+
+You can open and edit the config from inside the app using `:config`.
+
+If you prefer a different look, pick one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and set `theme_path` in the config (via `:config`), or copy a theme file to:
+
+```sh
+cp themes/matcha.toml ~/.config/gorae/theme.toml
+```
+
+## Recommended PDF viewer
+
+Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend. Zathura is minimal, keyboard-driven, starts instantly, supports vi-style navigation, and renders beautifully through MuPDF—great for tiling window managers.
+
+Install:
+
+* Debian/Ubuntu: `sudo apt install zathura zathura-pdf-mupdf`
+* Arch: `sudo pacman -S zathura zathura-pdf-mupdf`
+
+Then set the viewer command in your config:
+
+```json
+"pdf_viewer": "zathura"
+```
+
+If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can accept the default.
+
+## Roadmap
+
+* [ ] Update and revise README and manual
+* [ ] `gorae logo` command
+
+### AI features (planned)
+
+* AI tagging and summarization
+* Text extraction (OCR) (see: [https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/))
+* RAG and knowledge graphs
+* Prompt management
 
 ## Uninstall
 
@@ -64,51 +156,13 @@ After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path
 2. Remove the config/data folders if you no longer need them:
 
    ```sh
-   rm -rf ~/.config/gorae    # config + theme
+   rm -rf ~/.config/gorae        # config + theme
    rm -rf ~/.local/share/gorae   # metadata store, notes, db
    ```
 
 That's it—you can re-clone and reinstall at any time.
 
-## Everyday use
+## Acknowledgements
 
-- `f` = toggle Favorite, `t` = toggle To-read, `r` = cycle reading state (unread → reading → read).
-- `y` copies BibTeX, `n` edits notes, `e`/`v` open metadata editors.
-- Navigate files with Vim-style motion: `j/k` move, `h` goes up a directory, `l` enters, space toggles selection. Support arrow keys too. 
-- `a` creates a directory, `d` cuts selected files, 
-- `/` searches (use flags like `-t title`, `-a author`, `-y year`, `-c content`), 
-- `F`/`T` open smart lists (favorites, to-read).
-- `:help` inside the app lists every command.
-- `config` opens the config file.
+<!-- TODO: Add libraries/tools you use (Bubble Tea, Bubbles, Lip Gloss, Poppler, etc.) -->
 
-For deeper instructions (config, themes, metadata, search tips, helper folders, etc.) read **[docs/user-guide.md](docs/user-guide.md)**. Prefer a different look? Grab one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and point `config.theme_path` at it or copy it to `~/.config/gorae/theme.toml`.
-
-## Recommended PDF viewer
-
-Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend as the default. Zathura is a minimal, keyboard-driven PDF reader that starts instantly, supports vi-style navigation, and provides excellent rendering fidelity through MuPDF. It stays out of your way in tiling window managers yet still offers niceties like synctex, bookmarks, and recollection of the last page you viewed.
-
-Install it from your distro (`sudo apt install zathura zathura-pdf-mupdf`, `sudo pacman -S zathura zathura-pdf-mupdf`, etc.) and then set the viewer command in your config:
-
-```json
-"pdf_viewer": "zathura"
-```
-
-If you already have `zathura` on your `PATH`, Gorae will auto-detect it, so most users can just accept the default.
-
-TODO
-- Update and revise README and manual. 
-- logo command
-
-AI features:
-- AI tag
-- AI Summary
-- [Extract texts (OCR)](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
-- Knowledge Graphs
-- RAG
-- Prompt management
-
-## [Bangudae Petroglyphs](https://en.wikipedia.org/wiki/Bangudae_Petroglyphs)
-
-The world's earliest known depictions of whale hunting are found in the [Bangudae Petroglyphs (picture link)](https://www.khan.co.kr/article/202007080300025) in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
-
-## Acknowledgement

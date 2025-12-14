@@ -1,92 +1,204 @@
 # Gorae User Guide
 
-Welcome to Gorae (고래) 🐋 — a TUI librarian for your PDF collection. This guide dives into setup, configuration, and daily workflow tips. If you just need the short version, stick with the README; otherwise, swim on!
+Welcome to **Gorae** (고래) 🐋, a cozy TUI librarian for your PDF collection.
+This guide covers setup, configuration, themes, and daily workflow tips.
+If you only need the short version, check the README; otherwise, swim on!
 
-## Requirements & Installation
-
-1. Install Go 1.21+ and Poppler utilities (`pdftotext`, `pdfinfo`):
-   - **macOS**: `brew install golang poppler`
-   - **Debian/Ubuntu**: `sudo apt install golang-go poppler-utils`
-   - **Arch**: `sudo pacman -S go poppler`
-2. Clone the repo and run the helper script:
-
-   ```sh
-   git clone https://github.com/Han8931/gorae.git
-   cd gorae
-   ./install.sh             # default path (~/.local/bin on Linux, /usr/local/bin on macOS)
-   ./install.sh ~/bin/gorae # or pass your own destination
-   ```
-
-   Use `GORAE_INSTALL_PATH=/custom/path ./install.sh` if you prefer an env var over arguments.
-
-3. Alternatively, install manually:
-
-   ```sh
-   go install ./cmd/gorae
-   # or
-   go build -o gorae ./cmd/gorae
-   install -Dm755 gorae ~/.local/bin/gorae
-   ```
-
-Run `gorae` (optionally `-root /path/to/Papers`) to start the UI.
+---
 
 ## Configuration
 
-- First launch creates `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME}/gorae/config.json`).
-- Use `:config` inside the app to edit with your preferred editor, `:config show` to inspect paths, and `:config editor <cmd>` to change the editor itself.
-- Important keys:
-  - `watch_dir`: root folder that Gorae watches.
-  - `meta_dir`: where metadata/SQLite DB lives.
-  - `editor`, `pdf_viewer`, `notes_dir`, `theme_path`.
-  - Helper folders under `watch_dir`: `Recently Added`, `Recently Read`, `Favorites`, `To Read`. Gorae keeps them in sync so you can browse them with any file manager.
+On first launch, Gorae creates:
 
-### Recommended PDF viewer
+- `~/.config/gorae/config.json`  
+  (or `${XDG_CONFIG_HOME}/gorae/config.json` if `XDG_CONFIG_HOME` is set)
 
-Gorae works with any viewer command, but the default `pdf_viewer` is [Zathura](https://pwmt.org/projects/zathura/) using the MuPDF backend. Zathura is lightweight, vi-key friendly, and renders quickly with MuPDF, which makes it ideal for bouncing between the TUI and an external window. Install it with your package manager (`sudo pacman -S zathura zathura-pdf-mupdf`, `sudo apt install zathura zathura-pdf-mupdf`, etc.) and either keep the auto-detected default or set `"pdf_viewer": "zathura"` explicitly in `config.json`.
+You can edit the config from inside the app:
+
+- `:config`  open the config in your editor
+
+### Important keys
+
+- `watch_dir`: the root folder that Gorae watches (your PDF library).
+- `meta_dir`: where metadata (SQLite DB) is stored.
+- `editor`:  your preferred editor command (e.g., `nvim`).
+- `pdf_viewer`: viewer command (e.g., `zathura`).
+- `notes_dir`: where notes are stored (Markdown).
+- `theme_path`: path to your active theme file.
+
+### Helper folders
+
+Gorae can maintain helper folders under your library so you can browse curated subsets
+from **any file manager** (not only inside Gorae):
+
+- `Favorites/`
+- `To Read/`
+- `Recently Added/`
+- `Recently Read/`
+
+> Tip: Back up `meta_dir` to preserve reading states, tags, and notes.
+
+---
 
 ## Themes
 
-- Default theme path: `~/.config/gorae/theme.toml` (create from `themes/fancy-dark.toml` or edit the generated file).
-- `[palette]` defines colors, `[icons]` defines glyphs, `[components.*]` customize each pane. Supported styles: `fg`, `bg`, `bold`, `italic`, `faint`.
-- Components can reference palette entries via `fg = "palette.accent"` (supported keys: `bg`, `fg`, `muted`, `accent`, `success`, `warning`, `danger`, `selection`) so you can tweak palette values and see the whole UI update.
-- Run `:theme reload` (or restart Gorae) after editing themes.
-- Use `:theme show` inside the app to confirm which file is active, and `:theme reload` to apply changes without a restart.
+Default theme path:
 
-### Component reference
+- `~/.config/gorae/theme.toml`
 
-- Tree/list panels, preview pane, metadata overlay, status bar, prompts, separators, etc. map 1:1 to the TOML keys (`tree_body`, `list_cursor`, `preview_info`, …).
-- Borders can be `rounded`, `square`, `ascii`, `none`, etc.
+You can start from a built-in theme:
 
-## Metadata & Notes
+```sh
+cp themes/fancy-dark.toml ~/.config/gorae/theme.toml
+```
 
-- `e`: preview metadata, `e` again to edit inline, `v` to open the structured form in your editor.
-- `n`: edit the note (Markdown) for the current PDF.
-- `f` toggles Favorite, `t` toggles To-read, `u` opens a prompt to clear flags.
-- Reading state cycles with `r`: `○` → `▶` → `✓`.
-- `y`: copy BibTeX for the current file.
-- Fetch arXiv metadata with `:arxiv <id> [files...]` or `:arxiv -v` to apply to selected files.
+### Theme structure
 
-## Search & Filters
+* `[palette]` defines base colors.
+* `[icons]` defines glyphs for the UI (favorite/to-read/read states, etc.).
+* `[components.*]` defines styles for specific UI elements.
 
-- `/` or `:search <query>` runs a lookup. Modes: `content`, `title`, `author`, `year`.
-- Flags: `-mode`, `-case`, `-root PATH`. Shortcuts: prefix query with `title:` etc.
-- Results view controls: `j/k` (up/down), `PgUp/PgDn`, `Enter` to open, `Esc/q` to exit, `/` to search again.
-- Quick filters:
-  - `F`: favorites
-  - `T`: to-read
-  - `g r` / `g u` / `g d`: Reading / Unread / Read states
-- Result rows show `Title (Year)` plus hit counts; the preview pane lists snippets or metadata.
+Supported style keys:
 
-## Status & Command Palette
+* `fg`, `bg`, `bold`, `italic`, `faint`
 
-- Status bar displays mode, directory, selection summary, and last message.
-- `:` opens command mode (`:help` lists available commands).
-- `?` inside the UI (or `:help`) surfaces built-in help.
+Palette references are supported, e.g.:
+
+```toml
+fg = "palette.accent"
+bg = "palette.bg"
+```
+
+Common palette keys:
+`bg`, `fg`, `muted`, `accent`, `success`, `warning`, `danger`, `selection`
+
+### Reloading themes
+
+* `:theme show` show the currently active theme path
+* `:theme reload` reload theme without restarting (or restart Gorae)
+
+### Component reference (overview)
+
+Most UI parts map 1:1 to TOML keys (e.g., `tree_body`, `list_cursor`, `preview_info`).
+Borders can be set to styles like `rounded`, `square`, or `none`.
+
+---
+
+## File browsing
+
+Gorae's file browsing is inspired by tools like `lf` and `ranger`.
+
+Navigation:
+* `j` / `k`: move down / up
+* `l`: enter directory
+* `h`: go up to parent directory
+* Arrow keys are also supported
+* `a`: creates a directory 
+* `R`: rename a directory
+* `D`: delete files or dirs. 
+
+> Gorae supports arrow keys too. 
+
+Selection:
+
+* `Space`  toggle selection for the current item
+* `v` toggle selection for all PDF files (select all / clear all). 
+
+Sort:
+* `sy`: sort by year
+* `st`: sort by title
+
+
+---
+
+## Metadata & notes
+
+Metadata:
+
+* `e`  open the metadata editor for the current PDF
+* From the editor:
+  * `e`  edit inline
+  * `v`  open in your external editor (configured via `editor`)
+
+Notes:
+
+* `n`  edit the note (Markdown) for the current PDF
+
+---
+
+## Copy BibTeX
+
+* `y`  copy BibTeX for the current file (current cursor)
+
+---
+
+## Fetch arXiv metadata
+
+Commands:
+* `:arxiv <id> [files...]`
+
+Batch apply:
+* Select multiple files, then run:
+  * `:arxiv -v <id>` (applies to selected files)
+
+> Currently, arXiv is the only supported source for automatic metadata/BibTeX fetching.
+
+---
+
+## Favorites, To-read, and reading states
+
+Flags:
+* `f`  toggle Favorite
+* `t`  toggle To-read
+* `u`  clear flags (opens a prompt)
+
+Reading state:
+
+* `r`  cycle reading state:
+
+  * Unread → Reading → Read
+
+---
+
+## Search & filters
+
+Search:
+
+* `/`  open search
+
+Flags:
+
+* `-t <title>`
+* `-y <year>`
+* `-a <author>`
+* `-c <content>`
+
+Results view:
+
+* `j/k`  move
+* `Enter`  open the selected result
+* `Esc` or `q`  exit
+
+Quick filters:
+
+* `F`  Show favorites papers
+* `T`  Show to-read papers
+
+
+## Status bar & command palette
+
+* Status bar shows: mode, current directory, selection summary, and last message.
+* `:` opens command mode.
+* `:help` lists available commands.
+* `?` also opens help (if enabled).
+
+---
 
 ## Tips
 
-- Keep Poppler updated for faster previews/search.
-- Back up `meta_dir` to preserve your annotations and reading states.
-- Use the helper folders (`Favorites/`, `To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to quickly open curated subsets outside of Gorae.
+* Keep Poppler updated for faster previews and better text extraction.
+* Back up `meta_dir` regularly to preserve annotations and reading states.
+* Use helper folders (`Favorites/`, `To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
 
-Enjoy exploring your papers with Gorae! If you bump into issues or have feature ideas, open a GitHub issue—we’re always happy to hear from fellow readers.
+Enjoy exploring your papers with Gorae! If you run into issues or have feature ideas, please open a GitHub issuewe'd love to hear from fellow readers.
+
