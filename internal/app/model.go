@@ -17,6 +17,7 @@ import (
 
 	"gorae/internal/config"
 	"gorae/internal/meta"
+	"gorae/internal/theme"
 )
 
 const statusMessageTTL = 4 * time.Second
@@ -163,6 +164,11 @@ type Model struct {
 	pendingArxivQueue  []arxivBatch
 
 	quickFilter quickFilterMode
+
+	theme       theme.Theme
+	styles      viewStyles
+	iconSet     theme.IconSet
+	borderChars borderCharset
 }
 
 var metaFieldLabels = []string{
@@ -251,7 +257,7 @@ func canonicalPath(path string) string {
 }
 
 const (
-	panelSeparatorWidth = 6
+	panelSeparatorWidth = 4
 	minLeftPanelWidth   = 12
 	minMiddlePanelWidth = 25
 	minRightPanelWidth  = 25
@@ -405,6 +411,13 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	ti.Cursor.Style = ti.Cursor.Style.Bold(true)
 	ti.Focus()
 
+	th, themeErr := theme.LoadActive()
+	if themeErr != nil {
+		th = theme.Default()
+	}
+	styles := newViewStyles(th)
+	iconSet := th.IconSet()
+
 	m := Model{
 		cfg:                  cfg,
 		root:                 root,
@@ -421,6 +434,10 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		recentlyOpenedDir:    strings.TrimSpace(cfg.RecentlyOpenedDir),
 		recentlyOpenedLimit:  cfg.RecentlyOpenedLimit,
 		notesDir:             strings.TrimSpace(cfg.NotesDir),
+		theme:                th,
+		styles:               styles,
+		iconSet:              iconSet,
+		borderChars:          borderCharsetFor(th.Borders.Style),
 	}
 	if m.recentlyAddedSyncInt <= 0 {
 		m.recentlyAddedSyncInt = defaultRecentlyAddedSyncInterval
@@ -455,6 +472,12 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	}
 	m.loadEntries()
 	m.updateTextPreview()
+
+	if themeErr != nil {
+		m.status = "Using default theme (failed to load theme: " + themeErr.Error() + ")"
+		m.statusAt = time.Now()
+		m.sticky = true
+	}
 	return m
 }
 
@@ -476,6 +499,57 @@ func (m *Model) setPersistentStatus(msg string) {
 	m.status = msg
 	m.statusAt = time.Now()
 	m.sticky = true
+}
+
+func (m Model) readingStateIcon(value string) string {
+	var icon string
+	switch normalizeReadingStateValue(value) {
+	case readingStateReading:
+		icon = strings.TrimSpace(m.iconSet.Reading)
+	case readingStateRead:
+		icon = strings.TrimSpace(m.iconSet.Read)
+	default:
+		icon = strings.TrimSpace(m.iconSet.Unread)
+	}
+	if icon != "" {
+		return icon
+	}
+	switch normalizeReadingStateValue(value) {
+	case readingStateReading:
+		return "▶"
+	case readingStateRead:
+		return "✓"
+	default:
+		return "○"
+	}
+}
+
+func (m Model) entryIcon(isDir bool) string {
+	if isDir {
+		if icon := strings.TrimSpace(m.iconSet.Folder); icon != "" {
+			return icon
+		}
+		return "▸"
+	}
+	if icon := strings.TrimSpace(m.iconSet.PDF); icon != "" {
+		return icon
+	}
+	return "▣"
+}
+
+func (m Model) selectionIndicator() string {
+	if icon := strings.TrimSpace(m.iconSet.Selected); icon != "" {
+		return icon
+	}
+	return "▣"
+}
+
+func (m Model) listVisibleRows() int {
+	rows := m.viewportHeight - 3
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
 
 func sortModeLabel(mode sortMode) string {
@@ -799,11 +873,12 @@ func (m *Model) commandOutputViewHeight() int {
 }
 
 func (m *Model) ensureCursorVisible() {
+	visible := m.listVisibleRows()
 	if m.cursor < m.viewportStart {
 		m.viewportStart = m.cursor
 	}
-	if m.cursor >= m.viewportStart+m.viewportHeight {
-		m.viewportStart = m.cursor - m.viewportHeight + 1
+	if m.cursor >= m.viewportStart+visible {
+		m.viewportStart = m.cursor - visible + 1
 	}
 	if m.viewportStart < 0 {
 		m.viewportStart = 0

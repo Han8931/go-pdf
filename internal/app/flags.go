@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -107,47 +108,41 @@ func (m *Model) cycleReadingState() {
 		m.setStatus("Metadata store not available")
 		return
 	}
-	targets := m.selectionOrCurrent()
-	paths := m.canonicalFilePaths(targets)
-	if len(paths) == 0 {
-		m.setStatus("No files selected")
+	if len(m.entries) == 0 || m.cursor < 0 || m.cursor >= len(m.entries) {
+		m.setStatus("No files available")
+		return
+	}
+	entry := m.entries[m.cursor]
+	info, err := entry.Info()
+	isDir := entry.IsDir()
+	if err == nil {
+		isDir = info.IsDir()
+	}
+	if isDir {
+		m.setStatus("Reading state applies to PDFs only")
+		return
+	}
+	path := filepath.Join(m.cwd, entry.Name())
+	canonical := canonicalPath(path)
+	if canonical == "" {
+		m.setStatus("Invalid file path")
 		return
 	}
 	ctx := context.Background()
-	countByState := make(map[string]int, 3)
-	refreshPreview := false
-	for _, path := range paths {
-		md, err := m.loadMetadataRecord(ctx, path)
-		if err != nil {
-			m.setStatus("Failed to load metadata: " + err.Error())
-			return
-		}
-		md.ReadingState = nextReadingState(md.ReadingState)
-		countByState[md.ReadingState]++
-		if err := m.meta.Upsert(ctx, &md); err != nil {
-			m.setStatus("Failed to save metadata: " + err.Error())
-			return
-		}
-		m.refreshMetadataCache(path, md)
-		if path == m.currentEntryPath() {
-			refreshPreview = true
-		}
-	}
-	m.refreshEntryTitles()
-	if refreshPreview {
-		m.updateTextPreview()
-	}
-	summary := make([]string, 0, len(countByState))
-	for _, state := range []string{readingStateUnread, readingStateReading, readingStateRead} {
-		if count := countByState[state]; count > 0 {
-			summary = append(summary, fmt.Sprintf("%s: %d", readingStateLabel(state), count))
-		}
-	}
-	if len(summary) == 0 {
-		m.setStatus("Reading state unchanged")
+	md, err := m.loadMetadataRecord(ctx, canonical)
+	if err != nil {
+		m.setStatus("Failed to load metadata: " + err.Error())
 		return
 	}
-	m.setStatus("Reading state -> " + strings.Join(summary, ", "))
+	md.ReadingState = nextReadingState(md.ReadingState)
+	if err := m.meta.Upsert(ctx, &md); err != nil {
+		m.setStatus("Failed to save metadata: " + err.Error())
+		return
+	}
+	m.refreshMetadataCache(canonical, md)
+	m.refreshEntryTitles()
+	m.updateTextPreview()
+	m.setStatus("Reading state: " + readingStateLabel(md.ReadingState))
 }
 
 func (m *Model) canonicalFilePaths(paths []string) []string {
@@ -365,17 +360,6 @@ func normalizeReadingStateValue(value string) string {
 		return readingStateRead
 	default:
 		return readingStateUnread
-	}
-}
-
-func readingStateIcon(value string) string {
-	switch normalizeReadingStateValue(value) {
-	case readingStateReading:
-		return "▶"
-	case readingStateRead:
-		return "✓"
-	default:
-		return "○"
 	}
 }
 

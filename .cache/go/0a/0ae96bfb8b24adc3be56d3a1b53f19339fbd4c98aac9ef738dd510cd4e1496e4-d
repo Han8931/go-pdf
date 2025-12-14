@@ -1,0 +1,12 @@
+./bibtex.go
+./flags.go
+./fs.go
+./model.go
+./preview_text.go
+./recent.go
+./recent_opened.go
+./search.go
+./theme_styles.go
+./update.go
+./view.go
+./bibtex_test.go

@@ -5,9 +5,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"gorae/internal/meta"
 )
@@ -38,27 +41,40 @@ func fitLines(lines []string, height int) []string {
 	return lines
 }
 
+type panelLineKind int
+
+const (
+	panelLineBody panelLineKind = iota
+	panelLineInfo
+	panelLineActive
+	panelLineSelected
+	panelLineCursor
+	panelLineCursorSelected
+)
+
+type panelLine struct {
+	text string
+	kind panelLineKind
+}
+
 // Left panel: simple "tree" panel from root to cwd.
 func (m Model) renderTreePanel(width, height int) []string {
-	lines := []string{"[Parent]"}
+	lines := []panelLine{
+		{text: fmt.Sprintf("Current: %s", filepath.Base(m.cwd)), kind: panelLineInfo},
+	}
 
 	parent := filepath.Dir(m.cwd)
-
-	// No valid parent under root → just show a note.
 	if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
-		lines = append(lines, "(no parent under root)")
-		lines = trimLinesToWidth(lines, width)
-		return fitLines(lines, height)
+		lines = append(lines, panelLine{text: "(root directory)", kind: panelLineInfo})
+		return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
 	}
 
 	ents, err := os.ReadDir(parent)
 	if err != nil {
-		lines = append(lines, "(error reading parent)")
-		lines = trimLinesToWidth(lines, width)
-		return fitLines(lines, height)
+		lines = append(lines, panelLine{text: "(error reading parent)", kind: panelLineInfo})
+		return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
 	}
 
-	// hide dotfiles
 	filtered := make([]os.DirEntry, 0, len(ents))
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
@@ -67,7 +83,6 @@ func (m Model) renderTreePanel(width, height int) []string {
 		filtered = append(filtered, e)
 	}
 
-	// Optionally: sort dirs first, then alphabetically
 	sort.SliceStable(filtered, func(i, j int) bool {
 		di, dj := filtered[i].IsDir(), filtered[j].IsDir()
 		if di != dj {
@@ -77,71 +92,73 @@ func (m Model) renderTreePanel(width, height int) []string {
 			strings.ToLower(filtered[j].Name())
 	})
 
-	lines = append(lines, parent)
-
+	lines = append(lines, panelLine{text: fmt.Sprintf("Parent: %s", parent), kind: panelLineInfo})
 	for _, e := range filtered {
 		full := filepath.Join(parent, e.Name())
-
-		// mark the current directory
-		marker := "  "
-		if full == m.cwd {
-			marker = "➜ "
-		}
-
 		name := e.Name()
 		if e.IsDir() {
 			name += "/"
 		}
-
-		lines = append(lines, marker+name)
+		icon := m.entryIcon(e.IsDir())
+		text := fmt.Sprintf("%s %s", icon, name)
+		kind := panelLineBody
+		if full == m.cwd {
+			kind = panelLineActive
+		}
+		lines = append(lines, panelLine{text: text, kind: kind})
 	}
 
-	return fitLines(lines, height)
+	return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
 }
 
 // Middle panel: file list (what your old View used to show).
 func (m Model) renderListPanel(width, height int) []string {
-	var lines []string
+	var lines []panelLine
 
 	if len(m.entries) == 0 {
-		lines = append(lines, "(empty)")
-		lines = trimLinesToWidth(lines, width)
-		return fitLines(lines, height)
+		lines = append(lines, panelLine{text: "(empty)", kind: panelLineInfo})
+		return m.renderPanelBlock("Files", lines, width, height, m.styles.List)
 	}
 
-	end := m.viewportStart + height
+	bodyRows := height - 3
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+	end := m.viewportStart + bodyRows
 	if end > len(m.entries) {
 		end = len(m.entries)
 	}
 
 	for i := m.viewportStart; i < end; i++ {
 		e := m.entries[i]
-
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "➜ "
-		}
-
 		full := filepath.Join(m.cwd, e.Name())
-		sel := "[ ] "
-		if m.selected[full] {
-			sel = "[x] "
+		display := m.entryDisplayName(full, e)
+
+		kind := panelLineBody
+		if i == m.cursor {
+			kind = panelLineCursor
 		}
 
-		var line string
+		selMarker := " "
+		if m.selected[full] {
+			selMarker = m.selectionIndicator()
+		}
 
-		display := m.entryDisplayName(full, e)
-		line = fmt.Sprintf("%s%s %s", cursor, sel, display)
-
-		lines = append(lines, line)
+		text := fmt.Sprintf("%s %s", selMarker, display)
+		lines = append(lines, panelLine{text: text, kind: kind})
 	}
 
-	return fitLines(lines, height)
+	title := fmt.Sprintf("Files (%d)", len(m.entries))
+	return m.renderPanelBlock(title, lines, width, height, m.styles.List)
 }
 
 func (m Model) renderPreviewPanel(width, height int) []string {
 	if height <= 0 {
 		return nil
+	}
+	innerWidth := width - 2
+	if innerWidth <= 0 {
+		innerWidth = width
 	}
 
 	showMetadataOnly := false
@@ -154,17 +171,14 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		}
 	}
 
-	metaSection := m.metadataPanelLines(width)
+	metaSection := panelizeLines(m.metadataPanelLines(innerWidth))
 	if showMetadataOnly && len(metaSection) > 0 {
-		return fitLines(metaSection, height)
+		return m.renderPanelBlock("Details", metaSection, width, height, m.styles.Preview)
 	}
 
-	previewSection := m.previewPanelLines(width)
+	previewSection := panelizeLines(m.previewPanelLines(innerWidth))
 	if len(metaSection) == 0 {
-		if len(previewSection) > height {
-			previewSection = previewSection[:height]
-		}
-		return fitLines(previewSection, height)
+		return m.renderPanelBlock("Details", previewSection, width, height, m.styles.Preview)
 	}
 
 	reservedMeta := height / 2
@@ -189,19 +203,13 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		previewLimit = len(previewSection)
 	}
 
-	lines := make([]string, 0, height)
-	appendSection := func(section []string) {
-		for _, line := range section {
-			if len(lines) >= height {
-				return
-			}
-			lines = append(lines, line)
-		}
-	}
-
-	appendSection(previewSection[:previewLimit])
+	lines := make([]panelLine, 0, height)
+	lines = append(lines, previewSection[:previewLimit]...)
 	if previewLimit > 0 && len(lines) < height {
-		lines = append(lines, dividerLine(width))
+		lines = append(lines, panelLine{
+			text: dividerLine(innerWidth),
+			kind: panelLineInfo,
+		})
 	}
 
 	remaining := height - len(lines)
@@ -212,9 +220,9 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 	if metaCount > remaining {
 		metaCount = remaining
 	}
-	appendSection(metaSection[:metaCount])
+	lines = append(lines, metaSection[:metaCount]...)
 
-	return fitLines(lines, height)
+	return m.renderPanelBlock("Details", lines, width, height, m.styles.Preview)
 }
 
 // // wrapLinesToWidth wraps each line so that no visual line exceeds `width` runes.
@@ -242,22 +250,30 @@ func trimLinesToWidth(lines []string, width int) []string {
 	}
 	out := make([]string, len(lines))
 	for i, l := range lines {
-		r := []rune(l)
-		if len(r) > width {
-			out[i] = string(r[:width])
-		} else {
-			out[i] = l
-		}
+		out[i] = trimStringToWidth(l, width)
 	}
 	return out
 }
 
 func trimLine(s string, width int) string {
-	lines := trimLinesToWidth([]string{s}, width)
-	if len(lines) == 0 {
+	return trimStringToWidth(s, width)
+}
+
+func trimStringToWidth(s string, width int) string {
+	if width <= 0 {
 		return ""
 	}
-	return lines[0]
+	var b strings.Builder
+	current := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if current+w > width {
+			break
+		}
+		b.WriteRune(r)
+		current += w
+	}
+	return b.String()
 }
 
 func wrapTextToWidth(text string, width int) []string {
@@ -432,7 +448,11 @@ func (m Model) metaPopupContentLines(width int) []string {
 	if box == "" {
 		return nil
 	}
-	return strings.Split(box, "\n")
+	lines := strings.Split(box, "\n")
+	for i, line := range lines {
+		lines[i] = m.styles.MetaOverlay.Render(line)
+	}
+	return lines
 }
 
 func renderPopupBox(title string, lines []string, totalWidth int) string {
@@ -513,6 +533,9 @@ func (m Model) View() string {
 		leftWidth, middleWidth, rightWidth := m.panelWidths()
 
 		height := m.viewportHeight
+		if height < 3 {
+			height = 3
+		}
 
 		treeLines := m.renderTreePanel(leftWidth, height)
 		listLines := m.renderListPanel(middleWidth, height)
@@ -521,9 +544,17 @@ func (m Model) View() string {
 		if m.state == stateEditMeta || m.state == stateMetaPreview {
 			overlayLines = m.renderMetaPopupLines(middleWidth)
 			if len(overlayLines) > 0 {
-				overlayLines = trimLinesToWidth(overlayLines, middleWidth)
+				for i := range overlayLines {
+					overlayLines[i] = padStyledLine(overlayLines[i], middleWidth)
+				}
 			}
 		}
+
+		gapWidth := panelSeparatorWidth / 2
+		if gapWidth < 1 {
+			gapWidth = 1
+		}
+		gap := strings.Repeat(" ", gapWidth)
 
 		for i := 0; i < height; i++ {
 			tl := ""
@@ -541,11 +572,15 @@ func (m Model) View() string {
 				pl = prevLines[i]
 			}
 
-			line := padRight(tl, leftWidth) +
-				"" +
-				padRight(ll, middleWidth) +
-				"" +
-				padRight(pl, rightWidth)
+			line := tl
+			if gap != "" {
+				line += gap
+			}
+			line += ll
+			if gap != "" {
+				line += gap
+			}
+			line += pl
 
 			b.WriteString(line + "\n")
 		}
@@ -721,7 +756,7 @@ func (m Model) metadataPreviewLines(width int) []string {
 	lines = append(lines, "Status:")
 	lines = append(lines, "  Favorite: "+boolLabel(md.Favorite))
 	lines = append(lines, "  To-read : "+boolLabel(md.ToRead))
-	lines = append(lines, "  Reading : "+readingStateLabel(md.ReadingState))
+	lines = append(lines, fmt.Sprintf("  Reading : %s %s", m.readingStateIcon(md.ReadingState), readingStateLabel(md.ReadingState)))
 	lines = append(lines, "")
 	noteWidth := width - 2
 	if noteWidth < 10 {
@@ -745,30 +780,29 @@ func (m Model) renderStatusBar() string {
 		width = 80
 	}
 
-	dirInfo := fmt.Sprintf("Dir: %s", m.cwd)
-	itemInfo := m.selectionSummary()
+	dirSeg := m.statusSegment("Dir", m.cwd)
+	label, value := m.selectionSummary()
+	itemSeg := m.statusSegment(label, value)
 	status := m.statusMessage(time.Now())
 	if status == "" {
 		status = "Ready"
 	}
+	statusSeg := m.statusSegment("Status", status)
+	sep := m.styles.Separator.Render("│")
 
-	line := fmt.Sprintf(" %s │ %s │ %s ", dirInfo, itemInfo, status)
-	r := []rune(line)
-	if len(r) > width {
-		line = string(r[:width])
-	} else if len(r) < width {
-		line += strings.Repeat(" ", width-len(r))
-	}
-	return line
+	segments := []string{dirSeg, sep, itemSeg, sep, statusSeg}
+	line := strings.Join(segments, " ")
+	line = padStyledLine(line, width)
+	return m.styles.StatusBar.Render(line)
 }
 
-func (m Model) selectionSummary() string {
+func (m Model) selectionSummary() (string, string) {
 	selectedCount := len(m.selected)
 	if len(m.entries) == 0 {
 		if selectedCount > 0 {
-			return fmt.Sprintf("Selected: %d", selectedCount)
+			return "Selected", fmt.Sprintf("%d", selectedCount)
 		}
-		return "No items"
+		return "Items", "0"
 	}
 
 	entry := m.entries[m.cursor]
@@ -777,11 +811,11 @@ func (m Model) selectionSummary() string {
 		name += "/"
 	}
 
-	info := "Item: " + name
+	value := name
 	if selectedCount > 0 {
-		info += fmt.Sprintf("  Sel:%d", selectedCount)
+		value += fmt.Sprintf("  Sel:%d", selectedCount)
 	}
-	return info
+	return "Item", value
 }
 
 func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
@@ -895,4 +929,137 @@ func formatContentSnippets(snippets []string) []string {
 		lines = []string{"  (no snippet data)"}
 	}
 	return lines
+}
+
+func panelizeLines(lines []string) []panelLine {
+	out := make([]panelLine, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		kind := panelLineBody
+		if trimmed == "" {
+			kind = panelLineBody
+		} else if !strings.HasPrefix(line, "  ") && strings.HasSuffix(trimmed, ":") {
+			kind = panelLineInfo
+		}
+		out = append(out, panelLine{text: line, kind: kind})
+	}
+	return out
+}
+
+func padStyledLine(line string, width int) string {
+	w := lipgloss.Width(line)
+	if w >= width {
+		return lipgloss.PlaceHorizontal(width, lipgloss.Left, line)
+	}
+	return line + strings.Repeat(" ", width-w)
+}
+
+func (m Model) statusSegment(label, value string) string {
+	lbl := m.styles.StatusLabel.Render(strings.TrimSpace(label))
+	val := m.styles.StatusValue.Render(strings.TrimSpace(value))
+	return fmt.Sprintf("%s %s", lbl, val)
+}
+
+func (m Model) renderPanelBlock(title string, lines []panelLine, width, height int, styles panelStyles) []string {
+	if width < 4 {
+		width = 4
+	}
+	if height < 3 {
+		height = 3
+	}
+	innerWidth := width - 2
+	bodyHeight := height - 2
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+
+	top := m.styles.Border.Render(m.borderChars.TopLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.TopRight)
+	result := []string{top}
+
+	header := panelContent(innerWidth, title)
+	headerLine := fallbackStyle(styles.Header, lipgloss.NewStyle()).Render(header)
+	result = append(result, m.borderRow(headerLine, width))
+
+	bodyIndex := 0
+	for i := 0; i < bodyHeight-1; i++ {
+		text := ""
+		kind := panelLineBody
+		if bodyIndex < len(lines) {
+			entry := lines[bodyIndex]
+			bodyIndex++
+			text = entry.text
+			kind = entry.kind
+		}
+		content := panelContent(innerWidth, text)
+		styled := m.styleForPanelLine(styles, kind).Render(content)
+		result = append(result, m.borderRow(styled, width))
+	}
+
+	bottom := m.styles.Border.Render(m.borderChars.BottomLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.BottomRight)
+	result = append(result, bottom)
+	return result
+}
+
+func panelContent(innerWidth int, text string) string {
+	if innerWidth <= 0 {
+		return ""
+	}
+	margin := 1
+	if innerWidth <= margin*2 {
+		margin = 0
+	}
+	usable := innerWidth - margin*2
+	if usable <= 0 {
+		usable = innerWidth
+		margin = 0
+	}
+	trimmed := trimLine(text, usable)
+	padded := padStyledLine(trimmed, usable)
+	if margin == 0 {
+		return padded
+	}
+	return strings.Repeat(" ", margin) + padded + strings.Repeat(" ", margin)
+}
+
+func (m Model) borderRow(content string, width int) string {
+	if width <= 2 {
+		return content
+	}
+	left := m.styles.Border.Render(m.borderChars.Vertical)
+	right := m.styles.Border.Render(m.borderChars.Vertical)
+	return left + content + right
+}
+
+func (m Model) styleForPanelLine(styles panelStyles, kind panelLineKind) lipgloss.Style {
+	switch kind {
+	case panelLineInfo:
+		return fallbackStyle(styles.Info, styles.Body)
+	case panelLineActive:
+		return fallbackStyle(styles.Active, styles.Body)
+	case panelLineSelected:
+		return fallbackStyle(styles.Selected, styles.Body)
+	case panelLineCursor:
+		return fallbackStyle(styles.Cursor, fallbackStyle(styles.Selected, styles.Body))
+	case panelLineCursorSelected:
+		if !isZeroStyle(styles.CursorSelected) {
+			return styles.CursorSelected
+		}
+		if !isZeroStyle(styles.Cursor) {
+			return styles.Cursor
+		}
+		return fallbackStyle(styles.Selected, styles.Body)
+	default:
+		return fallbackStyle(styles.Body, lipgloss.NewStyle())
+	}
+}
+
+func fallbackStyle(primary, fallback lipgloss.Style) lipgloss.Style {
+	if isZeroStyle(primary) {
+		return fallback
+	}
+	return primary
+}
+
+func isZeroStyle(s lipgloss.Style) bool {
+	return reflect.ValueOf(s).IsZero()
 }

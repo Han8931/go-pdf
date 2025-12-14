@@ -1,0 +1,9 @@
+# test log
+getenv TMPDIR
+open /tmp/TestBuildBibtexEntryWithMetadata2446704424/001/attention.pdf
+stat /tmp/TestBuildBibtexEntryWithMetadata2446704424/001/attention.pdf
+open /tmp
+getenv TMPDIR
+open /tmp/TestBuildBibtexEntryFallback2996052256/001/sample-file.pdf
+stat /tmp/TestBuildBibtexEntryFallback2996052256/001/sample-file.pdf
+open /tmp

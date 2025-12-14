@@ -73,6 +73,22 @@ func (m *Model) loadEntries() {
 	m.ensureCursorVisible()
 }
 
+func formatEntryColumns(state, year, title string) string {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		state = "-"
+	}
+	year = strings.TrimSpace(year)
+	if year == "" {
+		year = "-"
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "-"
+	}
+	return fmt.Sprintf("%s  %s  %s", state, year, title)
+}
+
 func (m *Model) removeFromCut(path string) {
 	out := m.cut[:0]
 	for _, c := range m.cut {
@@ -150,7 +166,8 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 		}
 		if entryInfo != nil {
 			if data, ok := entryInfo[full]; ok {
-				m.entryTitles[full] = data.display()
+				icon := m.readingStateIcon(data.state)
+				m.entryTitles[full] = formatEntryColumns(icon, data.year, data.title)
 				continue
 			}
 		}
@@ -159,7 +176,7 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 			continue
 		}
 		name := m.normalizedEntryBase(e.Name(), full)
-		m.entryTitles[full] = fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
+		m.entryTitles[full] = formatEntryColumns(m.readingStateIcon(""), "-", name)
 	}
 }
 
@@ -178,15 +195,15 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	}
 	name := m.normalizedEntryBase(baseName, fullPath)
 	if m.meta == nil {
-		return fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
+		return formatEntryColumns(m.readingStateIcon(""), "-", name)
 	}
 
 	path := canonicalPath(fullPath)
 	md, err := m.meta.Get(ctx, path)
 	if err != nil || md == nil {
-		return fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
+		return formatEntryColumns(m.readingStateIcon(""), "-", name)
 	}
-	stateIcon := readingStateIcon(md.ReadingState)
+	stateIcon := m.readingStateIcon(md.ReadingState)
 	title := strings.TrimSpace(md.Title)
 	if title == "" {
 		title = name
@@ -195,7 +212,7 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	if year == "" {
 		year = "-"
 	}
-	return fmt.Sprintf("[%s][%s][%s]", stateIcon, year, title)
+	return formatEntryColumns(stateIcon, year, title)
 }
 
 func (m *Model) resortEntries() {
@@ -331,19 +348,6 @@ type entrySortInfo struct {
 	title string
 	year  string
 	state string
-}
-
-func (e entrySortInfo) display() string {
-	title := strings.TrimSpace(e.title)
-	if title == "" {
-		title = "-"
-	}
-	status := readingStateIcon(e.state)
-	year := strings.TrimSpace(e.year)
-	if year == "" {
-		year = "-"
-	}
-	return fmt.Sprintf("[%s][%s][%s]", status, year, title)
 }
 
 func (m *Model) normalizedEntryBase(name, fullPath string) string {
