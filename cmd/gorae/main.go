@@ -30,16 +30,18 @@ func main() {
 	cfg.WatchDir = root
 	if *rootFlag != "" {
 		defaultOldRecent := filepath.Join(origWatch, "_recent")
-		defaultAdded := filepath.Join(origWatch, "_recently_added")
+		legacyAdded := filepath.Join(origWatch, "_recently_added")
+		defaultAdded := filepath.Join(origWatch, "Recently Added")
 		trimmedRecent := strings.TrimSpace(cfg.RecentlyAddedDir)
-		if trimmedRecent == "" || trimmedRecent == defaultOldRecent || trimmedRecent == defaultAdded {
-			cfg.RecentlyAddedDir = filepath.Join(root, "_recently_added")
+		if trimmedRecent == "" || trimmedRecent == defaultOldRecent || trimmedRecent == legacyAdded || trimmedRecent == defaultAdded {
+			cfg.RecentlyAddedDir = filepath.Join(root, "Recently Added")
 		}
 
-		defaultOpened := filepath.Join(origWatch, "_recently_opened")
+		legacyOpened := filepath.Join(origWatch, "_recently_opened")
+		defaultOpened := filepath.Join(origWatch, "Recently Read")
 		trimmedOpened := strings.TrimSpace(cfg.RecentlyOpenedDir)
-		if trimmedOpened == "" || trimmedOpened == defaultOpened {
-			cfg.RecentlyOpenedDir = filepath.Join(root, "_recently_opened")
+		if trimmedOpened == "" || trimmedOpened == legacyOpened || trimmedOpened == defaultOpened {
+			cfg.RecentlyOpenedDir = filepath.Join(root, "Recently Read")
 		}
 	}
 

@@ -84,6 +84,13 @@ func (m Model) renderTreePanel(width, height int) []string {
 	}
 
 	sort.SliceStable(filtered, func(i, j int) bool {
+		pathI := filepath.Join(parent, filtered[i].Name())
+		pathJ := filepath.Join(parent, filtered[j].Name())
+		pi := m.specialDirPriority(pathI)
+		pj := m.specialDirPriority(pathJ)
+		if pi != pj {
+			return pi < pj
+		}
 		di, dj := filtered[i].IsDir(), filtered[j].IsDir()
 		if di != dj {
 			return di && !dj
@@ -586,21 +593,24 @@ func (m Model) View() string {
 		}
 	}
 
-	// Footer
-	if m.state == stateNewDir {
-		fmt.Fprintf(&b, "\nCreate directory: %s\n", m.input.View())
-	} else if m.state == stateRename {
-		fmt.Fprintf(&b, "\nRename: %s\n", m.input.View())
+	var promptLine string
+	switch m.state {
+	case stateNewDir:
+		promptLine = m.renderPromptLine("new dir", m.input.View())
+	case stateRename:
+		promptLine = m.renderPromptLine("rename", m.input.View())
+	case stateCommand:
+		promptLine = m.renderMinimalPrompt(":", m.input.View())
+	case stateSearchPrompt:
+		promptLine = m.renderPromptLine("search", m.input.View())
+	case stateArxivPrompt:
+		promptLine = m.renderPromptLine("arxiv", m.input.View())
 	}
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusBar())
 	b.WriteString("\n")
-	if m.state == stateCommand {
-		fmt.Fprintf(&b, "Command: %s\n", m.input.View())
-	} else if m.state == stateSearchPrompt {
-		fmt.Fprintf(&b, "Search: %s\n", m.input.View())
-	} else if m.state == stateArxivPrompt {
-		fmt.Fprintf(&b, "arXiv ID: %s\n", m.input.View())
+	if promptLine != "" {
+		b.WriteString(promptLine + "\n")
 	}
 	if len(m.commandOutput) > 0 {
 		lines := m.commandOutput
@@ -635,10 +645,12 @@ func (m Model) View() string {
 			b.WriteString(line + "\n")
 		}
 		if m.commandOutputPinned && len(lines) > 0 {
-			summary := fmt.Sprintf("-- lines %d-%d of %d (j/k scroll, Esc close) --", start+1, end, len(lines))
-			if m.width > 0 {
-				summary = trimLinesToWidth([]string{summary}, m.width)[0]
+			limit := m.width
+			if limit <= 0 {
+				limit = 80
 			}
+			info := fmt.Sprintf("Lines %d-%d of %d (j/k scroll, Esc close)", start+1, end, len(lines))
+			summary := m.styles.Separator.Render(padStyledLine(info, limit))
 			b.WriteString(summary + "\n")
 		}
 	}
@@ -651,75 +663,144 @@ func (m Model) renderSearchResultsView() string {
 	if width <= 0 {
 		width = 80
 	}
-	height := m.windowHeight
-	if height <= 0 {
-		height = m.viewportHeight + 5
-	}
-	if height <= 0 {
-		height = 24
-	}
 	listHeight, detailHeight := m.searchResultsHeights()
 
 	var b strings.Builder
-	modeName := m.lastSearchMode.displayName()
-	if modeName == "" {
-		modeName = "Content"
+	header := strings.TrimSpace(m.searchSummary)
+	if header == "" {
+		header = fmt.Sprintf("%s search results", m.lastSearchMode.displayName())
 	}
-	fmt.Fprintf(&b, "Search results (%s): %q\n", modeName, strings.TrimSpace(m.lastSearchQuery))
-	if summary := strings.TrimSpace(m.searchSummary); summary != "" {
-		b.WriteString(trimLine(summary, width) + "\n")
-	}
-	b.WriteString("Controls: j/k move • PgUp/PgDn page • Enter open • Esc/q close • / search again\n\n")
+	b.WriteString(m.styles.AppHeader.Render(padStyledLine(header, width)) + "\n")
 
-	if len(m.searchResults) == 0 {
-		b.WriteString("(no matches)\n")
-	} else {
-		start := m.searchResultOffset
-		end := start + listHeight
-		if end > len(m.searchResults) {
-			end = len(m.searchResults)
-		}
-		for i := start; i < end; i++ {
-			match := m.searchResults[i]
-			cursor := "  "
-			if i == m.searchResultCursor {
-				cursor = "➜ "
-			}
-			countInfo := ""
-			if match.Mode == searchModeContent && match.MatchCount > 0 {
-				countInfo = fmt.Sprintf(" (%d)", match.MatchCount)
-			}
-			line := fmt.Sprintf("%s%s%s", cursor, match.Path, countInfo)
-			b.WriteString(trimLine(line, width) + "\n")
-		}
-		b.WriteString(fmt.Sprintf("-- results %d-%d of %d --\n", start+1, end, len(m.searchResults)))
+	if filter := strings.TrimSpace(m.quickFilter.label()); filter != "" {
+		line := fmt.Sprintf("Quick filter: %s", filter)
+		b.WriteString(m.styles.Tree.Active.Render(padStyledLine(line, width)) + "\n")
 	}
 
-	b.WriteString(dividerLine(width) + "\n")
+	if value := strings.TrimSpace(m.lastSearchQuery); value != "" {
+		line := fmt.Sprintf("Query (%s): %s", m.lastSearchMode.displayName(), value)
+		b.WriteString(m.styles.Tree.Info.Render(padStyledLine(line, width)) + "\n")
+	}
 
-	detailLines := m.searchResultDetailLines(detailHeight, width)
-	for _, line := range detailLines {
+	controls := "Controls: j/k move • PgUp/PgDn page • Enter open • Esc/q close • / search again"
+	b.WriteString(m.styles.Separator.Render(padStyledLine(controls, width)) + "\n")
+
+	listLines, title := m.searchResultListLines(listHeight)
+	if title == "" {
+		title = "Results"
+	}
+	for _, line := range m.renderPanelBlock(title, listLines, width, listHeight+3, m.styles.List) {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\n")
+
+	detailLines := panelizeLines(m.searchResultDetailLines(detailHeight, width))
+	for _, line := range m.renderPanelBlock("Preview", detailLines, width, detailHeight+3, m.styles.Preview) {
 		b.WriteString(line + "\n")
 	}
 
-	if len(m.searchWarnings) > 0 {
-		maxWarn := detailHeight / 2
-		if maxWarn < 1 {
-			maxWarn = 1
-		}
-		if maxWarn > len(m.searchWarnings) {
-			maxWarn = len(m.searchWarnings)
-		}
-		b.WriteString("\nWarnings:\n")
-		for i := 0; i < maxWarn; i++ {
-			b.WriteString(trimLine(m.searchWarnings[i], width) + "\n")
-		}
-		if len(m.searchWarnings) > maxWarn {
-			b.WriteString(fmt.Sprintf("... %d more warning(s)\n", len(m.searchWarnings)-maxWarn))
-		}
+	if warn := m.renderSearchWarnings(width, detailHeight); warn != "" {
+		b.WriteString("\n" + warn + "\n")
 	}
 
-	return b.String()
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m Model) searchResultListLines(visible int) ([]panelLine, string) {
+	if visible < 1 {
+		visible = 1
+	}
+	total := len(m.searchResults)
+	if total == 0 {
+		return []panelLine{{text: "(no matches)", kind: panelLineInfo}}, "Results (0)"
+	}
+	start := m.searchResultOffset
+	if start < 0 {
+		start = 0
+	}
+	if start >= total {
+		start = total - 1
+		if start < 0 {
+			start = 0
+		}
+	}
+	cursor := m.searchResultCursor
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= total {
+		cursor = total - 1
+	}
+	if start > cursor {
+		start = cursor
+	}
+	end := start + visible
+	if end > total {
+		end = total
+		start = end - visible
+		if start < 0 {
+			start = 0
+		}
+	}
+	lines := make([]panelLine, 0, end-start)
+	for i := start; i < end; i++ {
+		match := m.searchResults[i]
+		title := strings.TrimSpace(match.Title)
+		if title == "" {
+			title = untitledPlaceholder
+		}
+		year := strings.TrimSpace(match.Year)
+		display := title
+		if year != "" {
+			display = fmt.Sprintf("%s (%s)", title, year)
+		}
+		info := []string{}
+		if match.MatchCount > 0 {
+			hits := "hit"
+			if match.MatchCount > 1 {
+				hits = "hits"
+			}
+			info = append(info, fmt.Sprintf("%d %s", match.MatchCount, hits))
+		}
+		if len(info) > 0 {
+			display += "  · " + strings.Join(info, " · ")
+		}
+		text := fmt.Sprintf("%3d. %s", i+1, display)
+		kind := panelLineBody
+		if i == cursor {
+			kind = panelLineCursor
+		}
+		lines = append(lines, panelLine{text: text, kind: kind})
+	}
+	title := fmt.Sprintf("Results %d-%d of %d", start+1, end, total)
+	return lines, title
+}
+
+func (m Model) renderSearchWarnings(width, detailHeight int) string {
+	if len(m.searchWarnings) == 0 {
+		return ""
+	}
+	maxWarn := detailHeight / 2
+	if maxWarn < 1 {
+		maxWarn = 1
+	}
+	if maxWarn > len(m.searchWarnings) {
+		maxWarn = len(m.searchWarnings)
+	}
+	lines := make([]panelLine, 0, maxWarn)
+	for i := 0; i < maxWarn; i++ {
+		lines = append(lines, panelLine{text: m.searchWarnings[i], kind: panelLineInfo})
+	}
+	panel := m.renderPanelBlock(fmt.Sprintf("Warnings (%d)", len(m.searchWarnings)), lines, width, maxWarn+3, m.styles.Tree)
+	var b strings.Builder
+	for _, line := range panel {
+		b.WriteString(line + "\n")
+	}
+	if len(m.searchWarnings) > maxWarn {
+		extra := fmt.Sprintf("... %d more warning(s)", len(m.searchWarnings)-maxWarn)
+		b.WriteString(m.styles.Tree.Info.Render(padStyledLine(extra, width)))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m Model) metadataPreviewLines(width int) []string {
@@ -731,16 +812,60 @@ func (m Model) metadataPreviewLines(width int) []string {
 		md = *m.currentMeta
 	}
 	md.Path = m.currentMetaPath
+	if strings.TrimSpace(md.Title) == "" {
+		return m.metadataPreviewFromText(width)
+	}
 	lines := make([]string, 0, metaFieldCount()+1)
-	lines = append(lines, "Metadata:")
+	type metaFieldLine struct {
+		label string
+		value string
+	}
+	var tailFields []metaFieldLine
+	titleRendered := false
 	for i := 0; i < metaFieldCount(); i++ {
-		val := strings.TrimSpace(metadataFieldValue(md, i))
+		rawVal := strings.TrimSpace(metadataFieldValue(md, i))
+		val := rawVal
 		if val == "" {
 			val = "(empty)"
 		}
 		label := metaFieldLabel(i)
+		if label == "Published" || label == "URL" || label == "DOI" {
+			tailFields = append(tailFields, metaFieldLine{label: label, value: val})
+			continue
+		}
+		if strings.EqualFold(label, "Title") {
+			labelLine := m.previewLabel("Title")
+			if labelLine == "" {
+				labelLine = "Title:"
+			}
+			lines = append(lines, labelLine)
+			titleWidth := width - 2
+			if titleWidth < 10 {
+				titleWidth = width
+			}
+			if rawVal == "" {
+				if fallback := m.metadataTitleFallback(titleWidth); len(fallback) > 0 {
+					for _, w := range fallback {
+						lines = append(lines, "  "+w)
+					}
+					lines = append(lines, "")
+					titleRendered = true
+					continue
+				}
+			}
+			for _, w := range wrapTextToWidth(val, titleWidth) {
+				lines = append(lines, "  "+w)
+			}
+			lines = append(lines, "")
+			titleRendered = true
+			continue
+		}
 		if isParagraphMetaField(label) {
-			lines = append(lines, label+":")
+			labelLine := m.previewLabel(label)
+			if labelLine == "" {
+				labelLine = label + ":"
+			}
+			lines = append(lines, labelLine)
 			offsetWidth := width - 2
 			if offsetWidth < 10 {
 				offsetWidth = width
@@ -751,18 +876,33 @@ func (m Model) metadataPreviewLines(width int) []string {
 			}
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s: %s", label, val))
+		lines = append(lines, m.formatDetailLine(label, val, width))
 	}
-	lines = append(lines, "Status:")
-	lines = append(lines, "  Favorite: "+boolLabel(md.Favorite))
-	lines = append(lines, "  To-read : "+boolLabel(md.ToRead))
-	lines = append(lines, fmt.Sprintf("  Reading : %s %s", m.readingStateIcon(md.ReadingState), readingStateLabel(md.ReadingState)))
+	if titleRendered && len(lines) > 0 && lines[len(lines)-1] != "" {
+		lines = append(lines, "")
+	}
+
+	statusLabel := m.previewLabel("Status")
+	if statusLabel == "" {
+		statusLabel = "Status:"
+	}
+	lines = append(lines, statusLabel)
+	lines = append(lines,
+		fmt.Sprintf("  Favorite : %s (%s)", metadataStatusBadge(md.Favorite, m.favoriteIcon()), boolLabel(md.Favorite)))
+	lines = append(lines,
+		fmt.Sprintf("  To-read  : %s (%s)", metadataStatusBadge(md.ToRead, m.toReadIcon()), boolLabel(md.ToRead)))
+	lines = append(lines,
+		fmt.Sprintf("  Reading  : %s %s", m.readingStateIcon(md.ReadingState), readingStateLabel(md.ReadingState)))
 	lines = append(lines, "")
 	noteWidth := width - 2
 	if noteWidth < 10 {
 		noteWidth = width
 	}
-	lines = append(lines, "Note:")
+	noteLabel := m.previewLabel("Note")
+	if noteLabel == "" {
+		noteLabel = "Note:"
+	}
+	lines = append(lines, noteLabel)
 	note := strings.TrimSpace(m.currentNote)
 	if note == "" {
 		lines = append(lines, "  (none - press 'n' to edit in your editor)")
@@ -771,7 +911,109 @@ func (m Model) metadataPreviewLines(width int) []string {
 			lines = append(lines, "  "+wrapped)
 		}
 	}
+	if len(tailFields) > 0 {
+		lines = append(lines, "")
+		for _, field := range tailFields {
+			lines = append(lines, m.formatDetailLine(field.label, field.value, width))
+		}
+	}
 	return lines
+}
+
+const (
+	maxTitlePreviewLines = 6
+	untitledPlaceholder  = "(untitled)"
+)
+
+func (m Model) metadataTitleFallback(width int) []string {
+	if len(m.previewText) == 0 {
+		return nil
+	}
+	if width < 10 {
+		width = 10
+	}
+	lines := make([]string, 0, maxTitlePreviewLines)
+	for _, raw := range m.previewText {
+		text := strings.TrimSpace(raw)
+		if text == "" {
+			continue
+		}
+		for _, wrapped := range wrapTextToWidth(text, width) {
+			w := strings.TrimSpace(wrapped)
+			if w == "" {
+				continue
+			}
+			lines = append(lines, w)
+			if len(lines) >= maxTitlePreviewLines {
+				return lines
+			}
+		}
+	}
+	return lines
+}
+
+func (m Model) metadataPreviewFromText(width int) []string {
+	if width <= 0 {
+		width = 40
+	}
+	lines := []string{"Preview (first page):"}
+	if len(m.previewText) == 0 {
+		lines = append(lines, "  (no preview available)")
+		return lines
+	}
+	contentWidth := width - 2
+	if contentWidth < 10 {
+		contentWidth = width
+	}
+	added := false
+	for _, raw := range m.previewText {
+		text := strings.TrimSpace(raw)
+		if text == "" {
+			continue
+		}
+		for _, wrapped := range wrapTextToWidth(text, contentWidth) {
+			lines = append(lines, "  "+wrapped)
+			added = true
+		}
+	}
+	if !added {
+		lines = append(lines, "  (no preview available)")
+	}
+	return trimLinesToWidth(lines, width)
+}
+
+func (m Model) previewLabel(label string) string {
+	clean := strings.TrimSpace(label)
+	if clean == "" {
+		return ""
+	}
+	clean = strings.TrimSuffix(clean, ":")
+	text := clean + ":"
+	return m.styles.Preview.Info.Render(text)
+}
+
+func (m Model) formatDetailLine(label, value string, width int) string {
+	cleanLabel := strings.TrimSpace(label)
+	if cleanLabel == "" {
+		return value
+	}
+	rawLabel := fmt.Sprintf("%-10s", cleanLabel+":")
+	colored := m.styles.Preview.Info.Render(rawLabel)
+	formatted := fmt.Sprintf("%s %s", colored, value)
+	if width > 0 {
+		return trimLine(formatted, width)
+	}
+	return formatted
+}
+
+func metadataStatusBadge(active bool, icon string) string {
+	if !active {
+		return "-"
+	}
+	if trimmed := strings.TrimSpace(icon); trimmed != "" {
+		return trimmed
+	}
+	return "*"
 }
 
 func (m Model) renderStatusBar() string {
@@ -780,17 +1022,17 @@ func (m Model) renderStatusBar() string {
 		width = 80
 	}
 
-	dirSeg := m.statusSegment("Dir", m.cwd)
+	modeSeg := m.statusSegment("MODE", m.currentModeLabel())
+	dirSeg := m.statusSegment("DIR", m.cwd)
 	label, value := m.selectionSummary()
-	itemSeg := m.statusSegment(label, value)
+	itemSeg := m.statusSegment(strings.ToUpper(label), value)
 	status := m.statusMessage(time.Now())
 	if status == "" {
 		status = "Ready"
 	}
-	statusSeg := m.statusSegment("Status", status)
-	sep := m.styles.Separator.Render("│")
+	statusSeg := m.statusSegment("MSG", status)
 
-	segments := []string{dirSeg, sep, itemSeg, sep, statusSeg}
+	segments := []string{modeSeg, dirSeg, itemSeg, statusSeg}
 	line := strings.Join(segments, " ")
 	line = padStyledLine(line, width)
 	return m.styles.StatusBar.Render(line)
@@ -816,6 +1058,27 @@ func (m Model) selectionSummary() (string, string) {
 		value += fmt.Sprintf("  Sel:%d", selectedCount)
 	}
 	return "Item", value
+}
+
+func (m Model) currentModeLabel() string {
+	switch m.state {
+	case stateCommand:
+		return "Command"
+	case stateSearchPrompt, stateSearchResults:
+		return "Search"
+	case stateEditMeta, stateMetaPreview:
+		return "Meta"
+	case stateNewDir:
+		return "New Dir"
+	case stateRename:
+		return "Rename"
+	case stateArxivPrompt:
+		return "arXiv"
+	case stateUnmarkPrompt:
+		return "Unmark"
+	default:
+		return "Normal"
+	}
 }
 
 func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
@@ -938,7 +1201,7 @@ func panelizeLines(lines []string) []panelLine {
 		kind := panelLineBody
 		if trimmed == "" {
 			kind = panelLineBody
-		} else if !strings.HasPrefix(line, "  ") && strings.HasSuffix(trimmed, ":") {
+		} else if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, "  ") {
 			kind = panelLineInfo
 		}
 		out = append(out, panelLine{text: line, kind: kind})
@@ -955,9 +1218,34 @@ func padStyledLine(line string, width int) string {
 }
 
 func (m Model) statusSegment(label, value string) string {
-	lbl := m.styles.StatusLabel.Render(strings.TrimSpace(label))
-	val := m.styles.StatusValue.Render(strings.TrimSpace(value))
-	return fmt.Sprintf("%s %s", lbl, val)
+	lbl := strings.ToUpper(strings.TrimSpace(label))
+	val := strings.TrimSpace(value)
+	labelPart := m.styles.StatusLabel.Render(" " + lbl + " ")
+	valuePart := m.styles.StatusValue.Render(" " + val + " ")
+	return labelPart + valuePart
+}
+
+func (m Model) renderPromptLine(label, value string) string {
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	labelText := strings.ToUpper(strings.TrimSpace(label))
+	segment := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		m.styles.PromptLabel.Render(" "+labelText+" "),
+		m.styles.PromptValue.Render(" "+value),
+	)
+	return padStyledLine(segment, width)
+}
+
+func (m Model) renderMinimalPrompt(prefix, value string) string {
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	text := prefix + value
+	return padStyledLine(text, width)
 }
 
 func (m Model) renderPanelBlock(title string, lines []panelLine, width, height int, styles panelStyles) []string {

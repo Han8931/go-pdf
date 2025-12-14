@@ -1,0 +1,109 @@
+# Gorae color theme.
+# Gorae Matcha (warm-ish dark + mint accents)
+
+[meta]
+name = "Gorae Matcha"
+version = 1
+
+[palette]
+bg = "#0f1412"
+fg = "#e7f0ea"
+muted = "#90a39a"
+accent = "#7bdcb5"
+success = "#9be28d"
+warning = "#f2c77f"
+danger = "#ff6b7a"
+selection = "#4ecdc4"
+
+[borders]
+style = "rounded"
+color = "#2a3a33"
+
+[icons]
+mode = "unicode"
+favorite = "★"
+toread = "•"
+read = "✓"
+reading = "🕮"
+unread = "⛔"
+folder = "▸"
+pdf = "▣"
+selected = "▌"
+
+[components.app_header]
+fg = "#e7f0ea"
+bg = "#0f1412"
+bold = true
+
+[components.tree_header]
+fg = "#9be28d"
+bg = "#121b17"
+bold = true
+
+[components.tree_body]
+fg = "#cfe0d8"
+
+[components.tree_active]
+fg = "#f2c77f"
+bold = true
+
+[components.tree_info]
+fg = "#90a39a"
+italic = true
+
+[components.list_header]
+fg = "#e7f0ea"
+bg = "#16221c"
+bold = true
+
+[components.list_body]
+fg = "#e7f0ea"
+
+[components.list_selected]
+fg = "#7bdcb5"
+bold = true
+
+[components.list_cursor]
+fg = "#0f1412"
+bg = "#f2c77f"
+bold = true
+
+[components.list_cursor_selected]
+fg = "#0f1412"
+bg = "#4ecdc4"
+bold = true
+
+[components.preview_header]
+fg = "#7bdcb5"
+bg = "#121b17"
+bold = true
+
+[components.preview_body]
+fg = "#d7e7df"
+
+[components.separator]
+fg = "#2a3a33"
+
+[components.status_bar]
+fg = "#d7e7df"
+bg = "#0b0f0d"
+
+[components.status_label]
+fg = "#4ecdc4"
+bold = true
+
+[components.status_value]
+fg = "#f2c77f"
+
+[components.prompt_label]
+fg = "#0f1412"
+bg = "#7bdcb5"
+bold = true
+
+[components.prompt_value]
+fg = "#e7f0ea"
+bg = "#0f1412"
+
+[components.meta_overlay]
+fg = "#e7f0ea"
+bg = "#16221c"

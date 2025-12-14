@@ -1,39 +1,39 @@
 package app
 
 import (
-    "bytes"
-    "fmt"
-    "os/exec"
-    "strings"
+	"bytes"
+	"fmt"
+	"os/exec"
+	"strings"
 )
 
 // extractFirstPageText runs `pdftotext` on the first page and returns lines.
 // maxLines <= 0 means "no limit".
 func extractFirstPageText(path string, maxLines int) ([]string, error) {
-    // pdftotext path -f 1 -l 1 -layout -  (write to stdout)
+	// pdftotext path -f 1 -l 1 -layout -  (write to stdout)
 
-    // Ensure pdftotext exists
-    if _, err := exec.LookPath("pdftotext"); err != nil {
-        return nil, fmt.Errorf("pdftotext not installed (install via 'pacman -S poppler')")
-    }
+	// Ensure pdftotext exists
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		return nil, fmt.Errorf("pdftotext not installed (install via 'pacman -S poppler')")
+	}
 
-    cmd := exec.Command(
-        "pdftotext",
-        "-f", "1",
-        "-l", "1",
-        "-layout",
-        path,
-        "-", // stdout
-    )
+	cmd := exec.Command(
+		"pdftotext",
+		"-f", "1",
+		"-l", "1",
+		"-layout",
+		path,
+		"-", // stdout
+	)
 
-    var out bytes.Buffer
-    var errBuf bytes.Buffer
-    cmd.Stdout = &out
-    cmd.Stderr = &errBuf
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
 
-    if err := cmd.Run(); err != nil {
-        return nil, fmt.Errorf("pdftotext: %w\n%s", err, errBuf.String())
-    }
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("pdftotext: %w\n%s", err, errBuf.String())
+	}
 
 	text := out.String()
 	rawLines := strings.Split(text, "\n")

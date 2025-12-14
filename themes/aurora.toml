@@ -1,0 +1,109 @@
+# Gorae color theme.
+# Gorae Aurora (dark, high-contrast, cool accents)
+
+[meta]
+name = "Gorae Aurora"
+version = 1
+
+[palette]
+bg = "#0b1020"
+fg = "#e6edf3"
+muted = "#93a4b7"
+accent = "#7aa2f7"
+success = "#9ece6a"
+warning = "#e0af68"
+danger = "#f7768e"
+selection = "#2ac3de"
+
+[borders]
+style = "rounded"
+color = "#2a3558"
+
+[icons]
+mode = "unicode"
+favorite = "★"
+toread = "•"
+read = "✓"
+reading = "🕮"
+unread = "⛔"
+folder = "▸"
+pdf = "▣"
+selected = "▌"
+
+[components.app_header]
+fg = "#e6edf3"
+bg = "#0b1020"
+bold = true
+
+[components.tree_header]
+fg = "#9ece6a"
+bg = "#111a33"
+bold = true
+
+[components.tree_body]
+fg = "#c7d1e0"
+
+[components.tree_active]
+fg = "#e0af68"
+bold = true
+
+[components.tree_info]
+fg = "#93a4b7"
+italic = true
+
+[components.list_header]
+fg = "#e6edf3"
+bg = "#121b36"
+bold = true
+
+[components.list_body]
+fg = "#e6edf3"
+
+[components.list_selected]
+fg = "#2ac3de"
+bold = true
+
+[components.list_cursor]
+fg = "#0b1020"
+bg = "#e0af68"
+bold = true
+
+[components.list_cursor_selected]
+fg = "#0b1020"
+bg = "#2ac3de"
+bold = true
+
+[components.preview_header]
+fg = "#7aa2f7"
+bg = "#0f1831"
+bold = true
+
+[components.preview_body]
+fg = "#d6deeb"
+
+[components.separator]
+fg = "#2a3558"
+
+[components.status_bar]
+fg = "#d6deeb"
+bg = "#070a14"
+
+[components.status_label]
+fg = "#2ac3de"
+bold = true
+
+[components.status_value]
+fg = "#e0af68"
+
+[components.prompt_label]
+fg = "#0b1020"
+bg = "#7aa2f7"
+bold = true
+
+[components.prompt_value]
+fg = "#e6edf3"
+bg = "#0b1020"
+
+[components.meta_overlay]
+fg = "#e6edf3"
+bg = "#121b36"

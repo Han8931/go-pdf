@@ -20,7 +20,11 @@ import (
 	"gorae/internal/theme"
 )
 
-const statusMessageTTL = 4 * time.Second
+const (
+	statusMessageTTL = 4 * time.Second
+	favoritesDirName = "Favorites"
+	toReadDirName    = "To Read"
+)
 
 type sortMode int
 
@@ -97,6 +101,8 @@ type Model struct {
 	cwd                 string
 	cwdIsRecentlyOpened bool
 	cwdIsRecentlyAdded  bool
+	cwdIsFavorites      bool
+	cwdIsToRead         bool
 	entries             []fs.DirEntry
 	cursor              int
 	err                 error
@@ -124,6 +130,10 @@ type Model struct {
 	recentlyOpenedDir          string
 	recentlyOpenedDirCanonical string
 	recentlyOpenedLimit        int
+	favoritesDir               string
+	favoritesDirCanonical      string
+	toReadDir                  string
+	toReadDirCanonical         string
 
 	viewportStart  int
 	viewportHeight int
@@ -407,38 +417,41 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	root := cfg.WatchDir
 	ti := textinput.New()
 	ti.Placeholder = ""
+	ti.Prompt = ""
 	ti.CharLimit = 200
 	ti.Cursor.Style = ti.Cursor.Style.Bold(true)
 	ti.Focus()
 
-	th, themeErr := theme.LoadActive()
+	th, themeErr := theme.LoadFrom(cfg.ThemePath)
 	if themeErr != nil {
 		th = theme.Default()
 	}
-	styles := newViewStyles(th)
-	iconSet := th.IconSet()
+	favoritesDir := canonicalPath(filepath.Join(root, favoritesDirName))
+	toReadDir := canonicalPath(filepath.Join(root, toReadDirName))
 
 	m := Model{
-		cfg:                  cfg,
-		root:                 root,
-		cwd:                  root,
-		selected:             make(map[string]bool),
-		input:                ti,
-		viewportHeight:       20,
-		meta:                 store,
-		sortMode:             sortByName,
-		entryTitles:          make(map[string]string),
-		recentlyAddedDir:     strings.TrimSpace(cfg.RecentlyAddedDir),
-		recentlyAddedMaxAge:  time.Duration(cfg.RecentlyAddedDays) * 24 * time.Hour,
-		recentlyAddedSyncInt: defaultRecentlyAddedSyncInterval,
-		recentlyOpenedDir:    strings.TrimSpace(cfg.RecentlyOpenedDir),
-		recentlyOpenedLimit:  cfg.RecentlyOpenedLimit,
-		notesDir:             strings.TrimSpace(cfg.NotesDir),
-		theme:                th,
-		styles:               styles,
-		iconSet:              iconSet,
-		borderChars:          borderCharsetFor(th.Borders.Style),
+		cfg:                   cfg,
+		root:                  root,
+		cwd:                   root,
+		selected:              make(map[string]bool),
+		input:                 ti,
+		viewportHeight:        20,
+		meta:                  store,
+		sortMode:              sortByName,
+		entryTitles:           make(map[string]string),
+		recentlyAddedDir:      strings.TrimSpace(cfg.RecentlyAddedDir),
+		recentlyAddedMaxAge:   time.Duration(cfg.RecentlyAddedDays) * 24 * time.Hour,
+		recentlyAddedSyncInt:  defaultRecentlyAddedSyncInterval,
+		recentlyOpenedDir:     strings.TrimSpace(cfg.RecentlyOpenedDir),
+		recentlyOpenedLimit:   cfg.RecentlyOpenedLimit,
+		favoritesDir:          favoritesDir,
+		favoritesDirCanonical: favoritesDir,
+		toReadDir:             toReadDir,
+		toReadDirCanonical:    toReadDir,
+		notesDir:              strings.TrimSpace(cfg.NotesDir),
 	}
+
+	m.applyTheme(th)
 	if m.recentlyAddedSyncInt <= 0 {
 		m.recentlyAddedSyncInt = defaultRecentlyAddedSyncInterval
 	}
@@ -472,6 +485,9 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	}
 	m.loadEntries()
 	m.updateTextPreview()
+	if err := m.syncCollectionDirectories(); err != nil {
+		m.setStatus("Favorite/To-read sync failed: " + err.Error())
+	}
 
 	if themeErr != nil {
 		m.status = "Using default theme (failed to load theme: " + themeErr.Error() + ")"
@@ -479,6 +495,16 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		m.sticky = true
 	}
 	return m
+}
+
+func (m *Model) applyTheme(th theme.Theme) {
+	if m == nil {
+		return
+	}
+	m.theme = th
+	m.styles = newViewStyles(th)
+	m.iconSet = th.IconSet()
+	m.borderChars = borderCharsetFor(th.Borders.Style)
 }
 
 // func (m Model) Init() tea.Cmd {
@@ -542,6 +568,36 @@ func (m Model) selectionIndicator() string {
 		return icon
 	}
 	return "▣"
+}
+
+func (m Model) specialDirPriority(path string) int {
+	canonical := canonicalPath(path)
+	switch canonical {
+	case m.recentlyAddedDirCanonical:
+		return 0
+	case m.recentlyOpenedDirCanonical:
+		return 1
+	case m.favoritesDirCanonical:
+		return 2
+	case m.toReadDirCanonical:
+		return 3
+	default:
+		return 100
+	}
+}
+
+func (m Model) favoriteIcon() string {
+	if icon := strings.TrimSpace(m.iconSet.Favorite); icon != "" {
+		return icon
+	}
+	return "♥"
+}
+
+func (m Model) toReadIcon() string {
+	if icon := strings.TrimSpace(m.iconSet.ToRead); icon != "" {
+		return icon
+	}
+	return "T"
 }
 
 func (m Model) listVisibleRows() int {
@@ -708,9 +764,7 @@ func (m *Model) enterSearchResults(msg searchResultMsg) {
 	m.searchSummary = msg.summary
 	m.lastSearchQuery = msg.req.query
 	m.lastSearchMode = msg.req.mode
-	if m.searchResultCursor >= len(m.searchResults) {
-		m.searchResultCursor = 0
-	}
+	m.searchResultCursor = 0
 	m.searchResultOffset = 0
 	m.ensureSearchResultVisible()
 }
@@ -742,26 +796,35 @@ func (m *Model) currentSearchMatch() *searchMatch {
 }
 
 func (m *Model) searchResultsHeights() (int, int) {
-	height := m.windowHeight
+	height := m.viewportHeight
 	if height <= 0 {
-		height = m.viewportHeight + 5
+		height = m.windowHeight - 5
 	}
 	if height <= 0 {
 		height = 20
 	}
-	detail := height / 3
-	if detail < 6 {
-		detail = 6
+	detail := height / 5
+	if detail < 4 {
+		detail = 4
 	}
-	if detail > height-5 {
-		detail = height - 5
+	maxDetail := height - 7
+	if maxDetail < 4 {
+		maxDetail = 4
+	}
+	if detail > maxDetail {
+		detail = maxDetail
 	}
 	if detail < 3 {
 		detail = 3
 	}
 	list := height - detail - 4
-	if list < 3 {
-		list = 3
+	if list < 4 {
+		needed := 4 - list
+		list = 4
+		detail -= needed
+		if detail < 3 {
+			detail = 3
+		}
 	}
 	return list, detail
 }
@@ -912,8 +975,14 @@ func (m *Model) updateTextPreview() {
 	}
 
 	if m.currentMeta != nil && m.currentMetaPath == canonical {
-		m.previewPath = full
-		return
+		title := ""
+		if m.currentMeta != nil {
+			title = strings.TrimSpace(m.currentMeta.Title)
+		}
+		if title != "" {
+			m.previewPath = full
+			return
+		}
 	}
 
 	// Non-PDFs: no text preview
@@ -984,6 +1053,12 @@ func (m *Model) directoryPreviewContents(dir string) []string {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
+		if !entry.IsDir() {
+			name := strings.ToLower(entry.Name())
+			if !strings.HasSuffix(name, ".pdf") {
+				continue
+			}
+		}
 		filtered = append(filtered, entry)
 	}
 
@@ -1007,15 +1082,56 @@ func (m *Model) directoryPreviewContents(dir string) []string {
 	if maxLines > len(filtered) {
 		maxLines = len(filtered)
 	}
+	var ctx context.Context
+	if m.meta != nil {
+		ctx = context.Background()
+	}
 	for i := 0; i < maxLines; i++ {
-		name := filtered[i].Name()
-		if filtered[i].IsDir() {
-			name += "/"
-		}
-		lines = append(lines, "  "+name)
+		entry := filtered[i]
+		lines = append(lines, "  "+m.directoryEntryLine(ctx, dir, entry))
 	}
 	if maxLines < len(filtered) {
 		lines = append(lines, fmt.Sprintf("  ... %d more", len(filtered)-maxLines))
 	}
 	return lines
+}
+
+func (m *Model) directoryEntryLine(ctx context.Context, dir string, entry os.DirEntry) string {
+	name := entry.Name()
+	full := filepath.Join(dir, name)
+	if entry.IsDir() {
+		icon := strings.TrimSpace(m.iconSet.Folder)
+		if icon == "" {
+			icon = "DIR"
+		}
+		return formatEntryColumns(icon, "", "", "-", name+"/")
+	}
+	state := m.readingStateIcon("")
+	year := "-"
+	title := strings.TrimSuffix(name, filepath.Ext(name))
+	if title == "" {
+		title = name
+	}
+	favIcon := ""
+	toReadIcon := ""
+	if ctx != nil && m.meta != nil {
+		canonical := canonicalPath(full)
+		md, err := m.meta.Get(ctx, canonical)
+		if err == nil && md != nil {
+			if t := strings.TrimSpace(md.Title); t != "" {
+				title = t
+			}
+			if y := strings.TrimSpace(md.Year); y != "" {
+				year = y
+			}
+			state = m.readingStateIcon(md.ReadingState)
+			if md.Favorite {
+				favIcon = m.favoriteIcon()
+			}
+			if md.ToRead {
+				toReadIcon = m.toReadIcon()
+			}
+		}
+	}
+	return formatEntryColumns(state, favIcon, toReadIcon, year, title)
 }

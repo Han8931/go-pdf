@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"gorae/internal/theme"
 )
 
 type Config struct {
@@ -21,14 +23,17 @@ type Config struct {
 	Editor              string `json:"editor,omitempty"`
 	PDFViewer           string `json:"pdf_viewer,omitempty"`
 	NotesDir            string `json:"notes_dir,omitempty"`
+	ThemePath           string `json:"theme_path,omitempty"`
 }
 
 const (
 	defaultRecentDays           = 30
 	defaultRecentlyOpenedLimit  = 20
 	legacyRecentDirName         = "_recent"
-	defaultRecentlyAddedDirName = "_recently_added"
-	defaultRecentlyOpenedName   = "_recently_opened"
+	legacyRecentlyAddedDirName  = "_recently_added"
+	legacyRecentlyOpenedName    = "_recently_opened"
+	defaultRecentlyAddedDirName = "Recently Added"
+	defaultRecentlyOpenedName   = "Recently Read"
 )
 
 func defaultConfigPath() (string, error) {
@@ -119,6 +124,26 @@ func defaultNotesDir(meta string) string {
 	return filepath.Join(meta, "notes")
 }
 
+func defaultThemePath() string {
+	path, err := theme.Path()
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+func legacyThemePath() (string, error) {
+	cfgHome := os.Getenv("XDG_CONFIG_HOME")
+	if cfgHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		cfgHome = filepath.Join(home, ".config")
+	}
+	return filepath.Join(cfgHome, "go-pdf", "theme.toml"), nil
+}
+
 func LoadOrInit() (*Config, error) {
 	path, err := defaultConfigPath()
 	if err != nil {
@@ -168,6 +193,7 @@ func LoadOrInit() (*Config, error) {
 		Editor:              defaultEditor(),
 		PDFViewer:           defaultPDFViewer(),
 		NotesDir:            defaultNotesDir(meta),
+		ThemePath:           defaultThemePath(),
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
@@ -257,8 +283,8 @@ func (c *Config) ensureDefaults() (bool, error) {
 	if strings.TrimSpace(c.RecentlyAddedDir) == "" {
 		c.RecentlyAddedDir = filepath.Join(c.WatchDir, defaultRecentlyAddedDirName)
 		changed = true
-	} else if isLegacyRecentPath(c.RecentlyAddedDir, c.WatchDir) {
-		c.RecentlyAddedDir = upgradeLegacyRecentPath(c.RecentlyAddedDir)
+	} else if isLegacyRecentlyAddedPath(c.RecentlyAddedDir, c.WatchDir) {
+		c.RecentlyAddedDir = upgradeLegacyRecentlyAddedPath(c.RecentlyAddedDir, c.WatchDir)
 		changed = true
 	}
 	if c.RecentlyAddedDays <= 0 {
@@ -267,6 +293,9 @@ func (c *Config) ensureDefaults() (bool, error) {
 	}
 	if strings.TrimSpace(c.RecentlyOpenedDir) == "" {
 		c.RecentlyOpenedDir = filepath.Join(c.WatchDir, defaultRecentlyOpenedName)
+		changed = true
+	} else if isLegacyRecentlyOpenedPath(c.RecentlyOpenedDir, c.WatchDir) {
+		c.RecentlyOpenedDir = upgradeLegacyRecentlyOpenedPath(c.RecentlyOpenedDir, c.WatchDir)
 		changed = true
 	}
 	if c.RecentlyOpenedLimit <= 0 {
@@ -285,25 +314,116 @@ func (c *Config) ensureDefaults() (bool, error) {
 		c.NotesDir = defaultNotesDir(c.MetaDir)
 		changed = true
 	}
+	if strings.TrimSpace(c.ThemePath) == "" {
+		themePath := defaultThemePath()
+		if themePath != "" {
+			c.ThemePath = themePath
+			changed = true
+		}
+	} else if newPath, upgraded := upgradeLegacyThemePath(c.ThemePath); upgraded {
+		c.ThemePath = newPath
+		changed = true
+	}
 	return changed, nil
 }
 
-func isLegacyRecentPath(path, watch string) bool {
+func upgradeLegacyThemePath(current string) (string, bool) {
+	clean := strings.TrimSpace(current)
+	if clean == "" {
+		return clean, false
+	}
+	target := defaultThemePath()
+	if target == "" {
+		return clean, false
+	}
+	legacy, err := legacyThemePath()
+	if err != nil {
+		return clean, false
+	}
+	cleanPath := filepath.Clean(clean)
+	if cleanPath != filepath.Clean(legacy) {
+		return clean, false
+	}
+	targetPath := filepath.Clean(target)
+	if targetPath == cleanPath {
+		return clean, false
+	}
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err == nil {
+			if data, readErr := os.ReadFile(cleanPath); readErr == nil {
+				_ = os.WriteFile(targetPath, data, 0o644)
+			}
+		}
+	}
+	return targetPath, true
+}
+
+func isLegacyRecentlyAddedPath(path, watch string) bool {
 	clean := filepath.Clean(strings.TrimSpace(path))
 	if clean == "" {
 		return false
 	}
-	legacy := filepath.Clean(filepath.Join(watch, legacyRecentDirName))
-	return clean == legacy || filepath.Base(clean) == legacyRecentDirName
+	watchClean := filepath.Clean(strings.TrimSpace(watch))
+	candidates := []string{
+		filepath.Clean(filepath.Join(watchClean, legacyRecentDirName)),
+		filepath.Clean(filepath.Join(watchClean, legacyRecentlyAddedDirName)),
+	}
+	for _, candidate := range candidates {
+		if candidate != "" && clean == candidate {
+			return true
+		}
+	}
+	base := filepath.Base(clean)
+	return base == legacyRecentDirName || base == legacyRecentlyAddedDirName
 }
 
-func upgradeLegacyRecentPath(path string) string {
+func upgradeLegacyRecentlyAddedPath(path, watch string) string {
 	clean := filepath.Clean(strings.TrimSpace(path))
 	if clean == "" {
-		return filepath.Join(".", defaultRecentlyAddedDirName)
+		if watch == "" {
+			return filepath.Join(".", defaultRecentlyAddedDirName)
+		}
+		return filepath.Join(watch, defaultRecentlyAddedDirName)
 	}
 	dir := filepath.Dir(clean)
+	if dir == "." || dir == string(filepath.Separator) {
+		dir = strings.TrimSpace(watch)
+		if dir == "" {
+			dir = "."
+		}
+	}
 	return filepath.Join(dir, defaultRecentlyAddedDirName)
+}
+
+func isLegacyRecentlyOpenedPath(path, watch string) bool {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	watchClean := filepath.Clean(strings.TrimSpace(watch))
+	legacy := filepath.Clean(filepath.Join(watchClean, legacyRecentlyOpenedName))
+	if legacy != "" && clean == legacy {
+		return true
+	}
+	return filepath.Base(clean) == legacyRecentlyOpenedName
+}
+
+func upgradeLegacyRecentlyOpenedPath(path, watch string) string {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "" {
+		if watch == "" {
+			return filepath.Join(".", defaultRecentlyOpenedName)
+		}
+		return filepath.Join(watch, defaultRecentlyOpenedName)
+	}
+	dir := filepath.Dir(clean)
+	if dir == "." || dir == string(filepath.Separator) {
+		dir = strings.TrimSpace(watch)
+		if dir == "" {
+			dir = "."
+		}
+	}
+	return filepath.Join(dir, defaultRecentlyOpenedName)
 }
 
 func detectSystemPDFViewer() string {

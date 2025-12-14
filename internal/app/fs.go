@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mattn/go-runewidth"
+
 	"gorae/internal/meta"
 )
 
@@ -27,6 +29,16 @@ func (m *Model) loadEntries() {
 		m.cwdIsRecentlyAdded = true
 	} else {
 		m.cwdIsRecentlyAdded = false
+	}
+	if m.favoritesDirCanonical != "" && cwdCanonical == m.favoritesDirCanonical {
+		m.cwdIsFavorites = true
+	} else {
+		m.cwdIsFavorites = false
+	}
+	if m.toReadDirCanonical != "" && cwdCanonical == m.toReadDirCanonical {
+		m.cwdIsToRead = true
+	} else {
+		m.cwdIsToRead = false
 	}
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
@@ -73,11 +85,15 @@ func (m *Model) loadEntries() {
 	m.ensureCursorVisible()
 }
 
-func formatEntryColumns(state, year, title string) string {
-	state = strings.TrimSpace(state)
-	if state == "" {
-		state = "-"
-	}
+const (
+	stateColumnWidth = 2
+	badgeColumnWidth = 1
+)
+
+func formatEntryColumns(state, favorite, toRead, year, title string) string {
+	state = formatStateField(state)
+	favorite = formatBadgeField(favorite)
+	toRead = formatBadgeField(toRead)
 	year = strings.TrimSpace(year)
 	if year == "" {
 		year = "-"
@@ -86,7 +102,40 @@ func formatEntryColumns(state, year, title string) string {
 	if title == "" {
 		title = "-"
 	}
-	return fmt.Sprintf("%s  %s  %s", state, year, title)
+	parts := []string{state, favorite, toRead, year, title}
+	return strings.Join(parts, " ")
+}
+
+func formatStateField(state string) string {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		state = "-"
+	}
+	state = runewidth.Truncate(state, stateColumnWidth, "")
+	padding := stateColumnWidth - runewidth.StringWidth(state)
+	if padding < 0 {
+		padding = 0
+	}
+	if padding > 0 {
+		state += strings.Repeat(" ", padding)
+	}
+	return state
+}
+
+func formatBadgeField(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = " "
+	}
+	value = runewidth.Truncate(value, badgeColumnWidth, "")
+	padding := badgeColumnWidth - runewidth.StringWidth(value)
+	if padding < 0 {
+		padding = 0
+	}
+	if padding > 0 {
+		value += strings.Repeat(" ", padding)
+	}
+	return value
 }
 
 func (m *Model) removeFromCut(path string) {
@@ -167,7 +216,15 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 		if entryInfo != nil {
 			if data, ok := entryInfo[full]; ok {
 				icon := m.readingStateIcon(data.state)
-				m.entryTitles[full] = formatEntryColumns(icon, data.year, data.title)
+				favIcon := ""
+				toReadIcon := ""
+				if data.favorite {
+					favIcon = m.favoriteIcon()
+				}
+				if data.toRead {
+					toReadIcon = m.toReadIcon()
+				}
+				m.entryTitles[full] = formatEntryColumns(icon, favIcon, toReadIcon, data.year, data.title)
 				continue
 			}
 		}
@@ -176,7 +233,7 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 			continue
 		}
 		name := m.normalizedEntryBase(e.Name(), full)
-		m.entryTitles[full] = formatEntryColumns(m.readingStateIcon(""), "-", name)
+		m.entryTitles[full] = formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
 	}
 }
 
@@ -195,13 +252,13 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	}
 	name := m.normalizedEntryBase(baseName, fullPath)
 	if m.meta == nil {
-		return formatEntryColumns(m.readingStateIcon(""), "-", name)
+		return formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
 	}
 
 	path := canonicalPath(fullPath)
 	md, err := m.meta.Get(ctx, path)
 	if err != nil || md == nil {
-		return formatEntryColumns(m.readingStateIcon(""), "-", name)
+		return formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
 	}
 	stateIcon := m.readingStateIcon(md.ReadingState)
 	title := strings.TrimSpace(md.Title)
@@ -212,7 +269,15 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	if year == "" {
 		year = "-"
 	}
-	return formatEntryColumns(stateIcon, year, title)
+	favIcon := ""
+	toReadIcon := ""
+	if md.Favorite {
+		favIcon = m.favoriteIcon()
+	}
+	if md.ToRead {
+		toReadIcon = m.toReadIcon()
+	}
+	return formatEntryColumns(stateIcon, favIcon, toReadIcon, year, title)
 }
 
 func (m *Model) resortEntries() {
@@ -264,6 +329,8 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 				}
 				data.year = strings.TrimSpace(md.Year)
 				data.state = normalizeReadingStateValue(md.ReadingState)
+				data.favorite = md.Favorite
+				data.toRead = md.ToRead
 			}
 		}
 		sortInfo[full] = data
@@ -280,6 +347,13 @@ func (m *Model) sortEntries(entries []fs.DirEntry, info map[string]entrySortInfo
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
+		pathA := filepath.Join(m.cwd, a.Name())
+		pathB := filepath.Join(m.cwd, b.Name())
+		priA := m.specialDirPriority(pathA)
+		priB := m.specialDirPriority(pathB)
+		if priA != priB {
+			return priA < priB
+		}
 		di, dj := a.IsDir(), b.IsDir()
 		if di != dj {
 			return di && !dj
@@ -345,14 +419,16 @@ func parseYearValue(year string) int {
 }
 
 type entrySortInfo struct {
-	title string
-	year  string
-	state string
+	title    string
+	year     string
+	state    string
+	favorite bool
+	toRead   bool
 }
 
 func (m *Model) normalizedEntryBase(name, fullPath string) string {
 	base := strings.TrimSuffix(name, filepath.Ext(name))
-	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded) {
+	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded || m.cwdIsFavorites || m.cwdIsToRead) {
 		if canonical := canonicalPath(fullPath); canonical != "" {
 			targetName := filepath.Base(canonical)
 			if targetName != "" {

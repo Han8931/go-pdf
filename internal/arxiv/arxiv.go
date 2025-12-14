@@ -21,7 +21,7 @@ type Metadata struct {
 	Abstract string
 }
 
-const userAgent = "gorae/0.1 (https://github.com/han/go-pdf)"
+const userAgent = "gorae/0.1 (https://github.com/Han8931/gorae)"
 
 type feed struct {
 	Entries []entry `xml:"entry"`

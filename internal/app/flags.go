@@ -82,6 +82,10 @@ func (m *Model) toggleMetadataFlag(flag metadataFlag) {
 		label = "To-read"
 	}
 	m.setStatus(fmt.Sprintf("%s toggled (%d on, %d off)", label, turnedOn, turnedOff))
+	m.refreshEntryTitles()
+	if err := m.syncCollectionDirectories(); err != nil {
+		m.setStatus("Failed to sync Favorites/To-read directories: " + err.Error())
+	}
 }
 
 func (m *Model) loadMetadataRecord(ctx context.Context, path string) (meta.Metadata, error) {
@@ -244,6 +248,10 @@ func (m *Model) applyUnmark(choice unmarkChoice) {
 	case unmarkChoiceBoth:
 		m.setStatus(fmt.Sprintf("Favorite cleared on %d file(s), To-read on %d", clearedFavorite, clearedToRead))
 	}
+	m.refreshEntryTitles()
+	if err := m.syncCollectionDirectories(); err != nil {
+		m.setStatus("Failed to sync Favorites/To-read directories: " + err.Error())
+	}
 }
 
 func (m *Model) showQuickFilter(mode quickFilterMode) tea.Cmd {
@@ -281,6 +289,11 @@ func (m *Model) showQuickFilter(mode quickFilterMode) tea.Cmd {
 			Mode:       searchModeTitle,
 			MatchCount: 1,
 			Snippets:   metadataSnippets(md),
+			Title:      strings.TrimSpace(md.Title),
+			Year:       strings.TrimSpace(md.Year),
+		}
+		if match.Title == "" {
+			match.Title = untitledPlaceholder
 		}
 		matches = append(matches, match)
 	}

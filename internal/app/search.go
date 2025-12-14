@@ -53,6 +53,8 @@ type searchMatch struct {
 	MatchCount int
 	Snippets   []string
 	Meta       pdfMeta
+	Title      string
+	Year       string
 }
 
 type searchAggregate struct {
@@ -218,13 +220,13 @@ func collectPDFFiles(root string) ([]string, []string, error) {
 func evaluatePath(path string, req searchRequest) (searchMatch, bool, error) {
 	switch req.mode {
 	case searchModeContent:
-		return searchPDFContent(path, req.query, req.caseSensitive, req.wrapWidth)
+		return searchPDFContent(path, req.query, req.caseSensitive, req.wrapWidth, req.metaStore)
 	default:
 		return searchPDFMetadata(path, req.mode, req.query, req.caseSensitive, req.metaStore)
 	}
 }
 
-func searchPDFContent(path, query string, caseSensitive bool, wrapWidth int) (searchMatch, bool, error) {
+func searchPDFContent(path, query string, caseSensitive bool, wrapWidth int, store *meta.Store) (searchMatch, bool, error) {
 	text, err := readPDFText(path)
 	if err != nil {
 		return searchMatch{}, false, err
@@ -253,6 +255,7 @@ func searchPDFContent(path, query string, caseSensitive bool, wrapWidth int) (se
 		MatchCount: len(positions),
 		Snippets:   snippets,
 	}
+	populateMatchDisplay(&match, store)
 	return match, true, nil
 }
 
@@ -342,6 +345,7 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 		Snippets:   lines,
 		Meta:       metaInfo,
 	}
+	populateMatchDisplay(&match, store)
 	return match, true, nil
 }
 
@@ -350,6 +354,58 @@ type pdfMeta struct {
 	Author       string
 	CreationDate string
 	ModDate      string
+}
+
+func populateMatchDisplay(match *searchMatch, store *meta.Store) {
+	if match == nil {
+		return
+	}
+	title := strings.TrimSpace(match.Title)
+	if title == "" {
+		title = strings.TrimSpace(match.Meta.Title)
+	}
+	year := strings.TrimSpace(match.Year)
+	if year == "" {
+		year = firstYearFromMeta(match.Meta)
+	}
+	if store != nil && (title == "" || year == "") {
+		ctx := context.Background()
+		data, err := store.Get(ctx, canonicalPath(match.Path))
+		if err == nil && data != nil {
+			if title == "" {
+				title = strings.TrimSpace(data.Title)
+			}
+			if year == "" {
+				year = strings.TrimSpace(data.Year)
+			}
+		}
+	}
+	if title == "" {
+		title = untitledPlaceholder
+	}
+	match.Title = title
+	match.Year = year
+}
+
+func firstYearFromMeta(meta pdfMeta) string {
+	candidates := []string{meta.CreationDate, meta.ModDate}
+	for _, candidate := range candidates {
+		if year := extractMatchYear(candidate); year != "" {
+			return year
+		}
+	}
+	return ""
+}
+
+var searchYearPattern = regexp.MustCompile(`\b(19|20)\d{2}\b`)
+
+func extractMatchYear(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	loc := searchYearPattern.FindString(value)
+	return loc
 }
 
 func highlightField(value, query string, caseSensitive bool) string {

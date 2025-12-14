@@ -29,7 +29,7 @@ selection = "#89dceb"
 
 [borders]
 style = "rounded"
-color = "#585b70"
+color = "palette.muted"
 
 [icons]
 mode = "unicode"
@@ -44,145 +44,150 @@ selected = "✔"
 selection = "▌"
 
 [components.app_header]
-fg = "#f5e0dc"
-bg = "#1e1e2e"
+fg = "palette.fg"
+bg = "palette.bg"
 bold = true
 
 [components.tree_header]
-fg = "#a6e3a1"
-bg = "#1b2430"
+fg = "palette.success"
+bg = "palette.bg"
 bold = true
 
 [components.tree_body]
-fg = "#b4c2f8"
+fg = "palette.fg"
 
 [components.tree_active]
-fg = "#f9e2af"
+fg = "palette.warning"
 bold = true
 
 [components.tree_info]
-fg = "#7f8ca3"
+fg = "palette.muted"
 italic = true
 
 [components.list_header]
-fg = "#f5e0dc"
-bg = "#2a2438"
+fg = "palette.fg"
+bg = "palette.bg"
 bold = true
 
 [components.list_body]
-fg = "#f2d5cf"
+fg = "palette.fg"
 
 [components.list_selected]
-fg = "#89dceb"
+fg = "palette.selection"
 bold = true
 
 [components.list_cursor]
-fg = "#1e1e2e"
-bg = "#f9e2af"
+fg = "palette.bg"
+bg = "palette.warning"
 bold = true
 
 [components.list_cursor_selected]
-fg = "#1e1e2e"
-bg = "#fab387"
+fg = "palette.bg"
+bg = "palette.danger"
 bold = true
 
 [components.preview_header]
-fg = "#cba6f7"
-bg = "#241f3d"
+fg = "palette.accent"
+bg = "palette.bg"
 bold = true
 
 [components.preview_body]
-fg = "#cdd6f4"
+fg = "palette.fg"
+
+[components.preview_info]
+fg = "palette.accent"
+bold = true
 
 [components.separator]
-fg = "#585b70"
+fg = "palette.muted"
 
 [components.status_bar]
-fg = "#cdd6f4"
-bg = "#11111b"
+fg = "palette.fg"
+bg = "palette.bg"
 
 [components.status_label]
-fg = "#94e2d5"
+fg = "palette.accent"
 bold = true
 
 [components.status_value]
-fg = "#f9e2af"
+fg = "palette.warning"
 
 [components.prompt_label]
-fg = "#1e1e2e"
-bg = "#cba6f7"
+fg = "palette.bg"
+bg = "palette.accent"
 bold = true
 
 [components.prompt_value]
-fg = "#f5e0dc"
-bg = "#1e1e2e"
+fg = "palette.fg"
+bg = "palette.bg"
 
 [components.meta_overlay]
-fg = "#f2cdcd"
-bg = "#312244"`
+fg = "palette.fg"
+bg = "palette.bg"`
 
 type Meta struct {
-	Name    string `toml:"name"`
-	Version int    `toml:"version"`
+	Name    string `toml:"name" json:"name"`
+	Version int    `toml:"version" json:"version"`
 }
 
 type Palette struct {
-	BG        string `toml:"bg"`
-	FG        string `toml:"fg"`
-	Muted     string `toml:"muted"`
-	Accent    string `toml:"accent"`
-	Success   string `toml:"success"`
-	Warning   string `toml:"warning"`
-	Danger    string `toml:"danger"`
-	Selection string `toml:"selection"`
+	BG        string `toml:"bg" json:"bg"`
+	FG        string `toml:"fg" json:"fg"`
+	Muted     string `toml:"muted" json:"muted"`
+	Accent    string `toml:"accent" json:"accent"`
+	Success   string `toml:"success" json:"success"`
+	Warning   string `toml:"warning" json:"warning"`
+	Danger    string `toml:"danger" json:"danger"`
+	Selection string `toml:"selection" json:"selection"`
 }
 
 type Borders struct {
-	Style string `toml:"style"`
-	Color string `toml:"color"`
+	Style string `toml:"style" json:"style"`
+	Color string `toml:"color" json:"color"`
 }
 
 type StyleSpec struct {
-	FG     string `toml:"fg"`
-	BG     string `toml:"bg"`
-	Bold   bool   `toml:"bold"`
-	Italic bool   `toml:"italic"`
-	Faint  bool   `toml:"faint"`
+	FG     string `toml:"fg" json:"fg"`
+	BG     string `toml:"bg" json:"bg"`
+	Bold   bool   `toml:"bold" json:"bold"`
+	Italic bool   `toml:"italic" json:"italic"`
+	Faint  bool   `toml:"faint" json:"faint"`
 }
 
 type ComponentStyles struct {
-	AppHeader        StyleSpec `toml:"app_header"`
-	TreeHeader       StyleSpec `toml:"tree_header"`
-	TreeBody         StyleSpec `toml:"tree_body"`
-	TreeActive       StyleSpec `toml:"tree_active"`
-	TreeInfo         StyleSpec `toml:"tree_info"`
-	ListHeader       StyleSpec `toml:"list_header"`
-	ListBody         StyleSpec `toml:"list_body"`
-	ListSelected     StyleSpec `toml:"list_selected"`
-	ListCursor       StyleSpec `toml:"list_cursor"`
-	ListCursorSelect StyleSpec `toml:"list_cursor_selected"`
-	PreviewHeader    StyleSpec `toml:"preview_header"`
-	PreviewBody      StyleSpec `toml:"preview_body"`
-	Separator        StyleSpec `toml:"separator"`
-	StatusBar        StyleSpec `toml:"status_bar"`
-	StatusLabel      StyleSpec `toml:"status_label"`
-	StatusValue      StyleSpec `toml:"status_value"`
-	PromptLabel      StyleSpec `toml:"prompt_label"`
-	PromptValue      StyleSpec `toml:"prompt_value"`
-	MetaOverlay      StyleSpec `toml:"meta_overlay"`
+	AppHeader        StyleSpec `toml:"app_header" json:"app_header"`
+	TreeHeader       StyleSpec `toml:"tree_header" json:"tree_header"`
+	TreeBody         StyleSpec `toml:"tree_body" json:"tree_body"`
+	TreeActive       StyleSpec `toml:"tree_active" json:"tree_active"`
+	TreeInfo         StyleSpec `toml:"tree_info" json:"tree_info"`
+	ListHeader       StyleSpec `toml:"list_header" json:"list_header"`
+	ListBody         StyleSpec `toml:"list_body" json:"list_body"`
+	ListSelected     StyleSpec `toml:"list_selected" json:"list_selected"`
+	ListCursor       StyleSpec `toml:"list_cursor" json:"list_cursor"`
+	ListCursorSelect StyleSpec `toml:"list_cursor_selected" json:"list_cursor_selected"`
+	PreviewHeader    StyleSpec `toml:"preview_header" json:"preview_header"`
+	PreviewBody      StyleSpec `toml:"preview_body" json:"preview_body"`
+	PreviewInfo      StyleSpec `toml:"preview_info" json:"preview_info"`
+	Separator        StyleSpec `toml:"separator" json:"separator"`
+	StatusBar        StyleSpec `toml:"status_bar" json:"status_bar"`
+	StatusLabel      StyleSpec `toml:"status_label" json:"status_label"`
+	StatusValue      StyleSpec `toml:"status_value" json:"status_value"`
+	PromptLabel      StyleSpec `toml:"prompt_label" json:"prompt_label"`
+	PromptValue      StyleSpec `toml:"prompt_value" json:"prompt_value"`
+	MetaOverlay      StyleSpec `toml:"meta_overlay" json:"meta_overlay"`
 }
 
 type Icons struct {
-	Mode      string `toml:"mode"`
-	Favorite  string `toml:"favorite"`
-	ToRead    string `toml:"toread"`
-	Read      string `toml:"read"`
-	Reading   string `toml:"reading"`
-	Unread    string `toml:"unread"`
-	Folder    string `toml:"folder"`
-	PDF       string `toml:"pdf"`
-	Selected  string `toml:"selected"`
-	Selection string `toml:"selection"`
+	Mode      string `toml:"mode" json:"mode"`
+	Favorite  string `toml:"favorite" json:"favorite"`
+	ToRead    string `toml:"toread" json:"toread"`
+	Read      string `toml:"read" json:"read"`
+	Reading   string `toml:"reading" json:"reading"`
+	Unread    string `toml:"unread" json:"unread"`
+	Folder    string `toml:"folder" json:"folder"`
+	PDF       string `toml:"pdf" json:"pdf"`
+	Selected  string `toml:"selected" json:"selected"`
+	Selection string `toml:"selection" json:"selection"`
 }
 
 type IconSet struct {
@@ -198,11 +203,11 @@ type IconSet struct {
 }
 
 type Theme struct {
-	Meta       Meta            `toml:"meta"`
-	Palette    Palette         `toml:"palette"`
-	Borders    Borders         `toml:"borders"`
-	Icons      Icons           `toml:"icons"`
-	Components ComponentStyles `toml:"components"`
+	Meta       Meta            `toml:"meta" json:"meta"`
+	Palette    Palette         `toml:"palette" json:"palette"`
+	Borders    Borders         `toml:"borders" json:"borders"`
+	Icons      Icons           `toml:"icons" json:"icons"`
+	Components ComponentStyles `toml:"components" json:"components"`
 }
 
 func Default() Theme {
@@ -249,6 +254,7 @@ func Default() Theme {
 
 			PreviewHeader: StyleSpec{FG: "#cba6f7", BG: "#241f3d", Bold: true},
 			PreviewBody:   StyleSpec{FG: "#cdd6f4"},
+			PreviewInfo:   StyleSpec{FG: "#f4b8e4", Bold: true},
 
 			Separator:   StyleSpec{FG: "#585b70"},
 			StatusBar:   StyleSpec{FG: "#cdd6f4", BG: "#11111b"},
@@ -262,18 +268,32 @@ func Default() Theme {
 }
 
 func LoadActive() (Theme, error) {
-	path, err := themePath()
-	if err != nil {
-		return Theme{}, err
+	return loadTheme("")
+}
+
+// LoadFrom loads the theme from the provided path. When path is empty it falls
+// back to the default theme path under the config directory.
+func LoadFrom(path string) (Theme, error) {
+	return loadTheme(path)
+}
+
+func loadTheme(path string) (Theme, error) {
+	resolved := strings.TrimSpace(path)
+	if resolved == "" {
+		var err error
+		resolved, err = themePath()
+		if err != nil {
+			return Theme{}, err
+		}
 	}
 	base := Default()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(resolved)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if err := ensureDefaultTheme(path); err != nil {
+			if err := ensureDefaultTheme(resolved); err != nil {
 				return base, err
 			}
-			data, err = os.ReadFile(path)
+			data, err = os.ReadFile(resolved)
 			if err != nil {
 				return base, err
 			}

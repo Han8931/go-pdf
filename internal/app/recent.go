@@ -24,14 +24,22 @@ func (m *Model) maybeSyncRecentlyAddedDir(force bool) error {
 			return nil
 		}
 	}
-	if err := syncRecentlyAddedDirectory(m.root, m.recentlyAddedDir, m.recentlyAddedMaxAge, m.meta, m.recentlyOpenedDir); err != nil {
+	if err := syncRecentlyAddedDirectory(
+		m.root,
+		m.recentlyAddedDir,
+		m.recentlyAddedMaxAge,
+		m.meta,
+		m.recentlyOpenedDir,
+		m.favoritesDir,
+		m.toReadDir,
+	); err != nil {
 		return err
 	}
 	m.lastRecentlyAddedSync = time.Now()
 	return nil
 }
 
-func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, store *meta.Store, openedDir string) error {
+func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, store *meta.Store, skipDirs ...string) error {
 	if root == "" || recentDir == "" || maxAge <= 0 {
 		return nil
 	}
@@ -44,10 +52,13 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 	if err != nil {
 		return err
 	}
-	openedAbs := ""
-	if openedDir != "" {
-		if abs, err := filepath.Abs(openedDir); err == nil {
-			openedAbs = abs
+	skip := make(map[string]struct{})
+	for _, dir := range skipDirs {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(dir); err == nil {
+			skip[abs] = struct{}{}
 		}
 	}
 
@@ -68,7 +79,7 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 			}
 			return nil
 		}
-		if openedAbs != "" && path == openedAbs {
+		if _, ok := skip[path]; ok {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

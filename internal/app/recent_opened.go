@@ -18,7 +18,7 @@ func (m *Model) recordRecentlyOpened(path string) {
 		return
 	}
 	if err := updateRecentlyOpenedDirectory(m.recentlyOpenedDir, path, m.recentlyOpenedLimit, m.meta); err != nil {
-		m.setStatus("Recently opened update failed: " + err.Error())
+		m.setStatus("Recently read update failed: " + err.Error())
 	}
 }
 

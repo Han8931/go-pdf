@@ -20,6 +20,7 @@ import (
 	"gorae/internal/arxiv"
 	"gorae/internal/config"
 	"gorae/internal/meta"
+	"gorae/internal/theme"
 )
 
 type configEditFinishedMsg struct {
@@ -711,7 +712,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 		m.status = "Not a PDF"
 		// 	}
 
-		case "enter", "l":
+		case "enter", "l", "right":
 			if len(m.entries) == 0 {
 				return m, nil
 			}
@@ -737,7 +738,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus("Not a PDF")
 			}
 
-		case "h", "backspace":
+		case "h", "backspace", "left":
 			currentDir := m.cwd
 			parent := filepath.Dir(m.cwd)
 
@@ -962,7 +963,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case ":":
 			m.state = stateCommand
-			m.input.SetValue(":")
+			m.input.SetValue("")
 			m.input.CursorEnd()
 			m.input.Focus()
 			m.resetCommandHistoryNavigation()
@@ -1443,8 +1444,10 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Metadata   : e preview/edit, v edit in editor, n edit note, y copy BibTeX, f favorite, t to-read, r cycle read state, u unmark, :arxiv [-v] <id>",
 			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits; F favorites, T to-read, g r/u/d show reading filters",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
-			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
+			"  Recently Read  : open a PDF to refresh the Recently Read directory (keeps last 20)",
+			"  Favorites/To-Read: browse the Favorites and To Read directories for quick access",
 			"  Config     : :config edits config, :config show displays info, :config editor <cmd> sets editor",
+			"  Theme      : :theme reload applies theme changes, :theme show displays the active path",
 			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
 		m.setCommandOutput(help)
@@ -1467,6 +1470,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		}
 	case "config":
 		return m.handleConfigCommand(args)
+	case "theme":
+		return m.handleThemeCommand(args)
 	case "arxiv":
 		return m.handleArxivCommand(args)
 	case "search":
@@ -1502,6 +1507,68 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
 		return nil
 	}
+}
+
+func (m *Model) handleThemeCommand(args []string) tea.Cmd {
+	if len(args) == 0 {
+		m.displayThemeSummary()
+		return nil
+	}
+	sub := strings.ToLower(args[0])
+	switch sub {
+	case "reload":
+		return m.reloadTheme()
+	case "show", "info", "path":
+		m.displayThemeSummary()
+	default:
+		m.setStatus(fmt.Sprintf("Unknown theme command: %s", sub))
+	}
+	return nil
+}
+
+func (m *Model) reloadTheme() tea.Cmd {
+	path := ""
+	if m.cfg != nil {
+		path = strings.TrimSpace(m.cfg.ThemePath)
+	}
+	th, err := theme.LoadFrom(path)
+	if err != nil {
+		m.setStatus("Theme reload failed: " + err.Error())
+		return nil
+	}
+	m.applyTheme(th)
+	m.refreshEntryTitles()
+	m.setStatus(fmt.Sprintf("Theme reloaded from %s", m.activeThemePath()))
+	return nil
+}
+
+func (m *Model) displayThemeSummary() {
+	path := m.activeThemePath()
+	metaName := strings.TrimSpace(m.theme.Meta.Name)
+	if metaName == "" {
+		metaName = "Unnamed theme"
+	}
+	lines := []string{
+		"Theme path:",
+		"  " + path,
+		fmt.Sprintf("Active theme: %s (v%d)", metaName, m.theme.Meta.Version),
+		fmt.Sprintf("Palette: bg=%s fg=%s accent=%s selection=%s", m.theme.Palette.BG, m.theme.Palette.FG, m.theme.Palette.Accent, m.theme.Palette.Selection),
+		"Use :theme reload after editing theme.toml or update config.theme_path to point at a different file.",
+	}
+	m.setCommandOutput(lines)
+	m.setStatus("Theme info displayed (:clear hides)")
+}
+
+func (m *Model) activeThemePath() string {
+	if m.cfg != nil {
+		if path := strings.TrimSpace(m.cfg.ThemePath); path != "" {
+			return path
+		}
+	}
+	if path, err := theme.Path(); err == nil {
+		return path
+	}
+	return "(unknown)"
 }
 
 func (m *Model) handleQuickFilterPrefix(key string) (bool, tea.Cmd) {
@@ -1549,9 +1616,46 @@ func (m *Model) displayConfigSummary() {
 	if viewer == "" {
 		viewer = strings.TrimSpace(config.DefaultPDFViewer())
 	}
+	themePath := ""
+	if m.cfg != nil {
+		themePath = strings.TrimSpace(m.cfg.ThemePath)
+	}
+	if themePath == "" {
+		if fallback, err := theme.Path(); err == nil {
+			themePath = fallback
+		} else {
+			themePath = fmt.Sprintf("(failed to resolve theme path: %v)", err)
+		}
+	}
+	recentAdded := "(not configured)"
+	if m.recentlyAddedDir != "" {
+		recentAdded = m.recentlyAddedDir
+	}
+	recentRead := "(not configured)"
+	if m.recentlyOpenedDir != "" {
+		recentRead = m.recentlyOpenedDir
+	}
+	favDir := "(inactive)"
+	if m.favoritesDir != "" {
+		favDir = m.favoritesDir
+	}
+	toReadDir := "(inactive)"
+	if m.toReadDir != "" {
+		toReadDir = m.toReadDir
+	}
 	lines := []string{
 		"Config file:",
 		"  " + path,
+		"Theme file:",
+		"  " + themePath,
+		"Recently Added directory:",
+		"  " + recentAdded,
+		"Recently Read directory:",
+		"  " + recentRead,
+		"Favorites directory:",
+		"  " + favDir,
+		"To Read directory:",
+		"  " + toReadDir,
 		"Configured editor:",
 		"  " + editor,
 		"Configured PDF viewer:",

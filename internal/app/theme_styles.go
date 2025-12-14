@@ -44,43 +44,45 @@ type borderCharset struct {
 }
 
 func newViewStyles(th theme.Theme) viewStyles {
+	palette := th.Palette
 	return viewStyles{
-		AppHeader: styleFromSpec(th.Components.AppHeader),
+		AppHeader: styleFromSpec(palette, th.Components.AppHeader),
 		Tree: panelStyles{
-			Header: styleFromSpec(th.Components.TreeHeader),
-			Body:   styleFromSpec(th.Components.TreeBody),
-			Info:   styleFromSpec(th.Components.TreeInfo),
-			Active: styleFromSpec(th.Components.TreeActive),
+			Header: styleFromSpec(palette, th.Components.TreeHeader),
+			Body:   styleFromSpec(palette, th.Components.TreeBody),
+			Info:   styleFromSpec(palette, th.Components.TreeInfo),
+			Active: styleFromSpec(palette, th.Components.TreeActive),
 		},
 		List: panelStyles{
-			Header:         styleFromSpec(th.Components.ListHeader),
-			Body:           styleFromSpec(th.Components.ListBody),
-			Selected:       styleFromSpec(th.Components.ListSelected),
-			Cursor:         styleFromSpec(th.Components.ListCursor),
-			CursorSelected: styleFromSpec(th.Components.ListCursorSelect),
+			Header:         styleFromSpec(palette, th.Components.ListHeader),
+			Body:           styleFromSpec(palette, th.Components.ListBody),
+			Selected:       styleFromSpec(palette, th.Components.ListSelected),
+			Cursor:         styleFromSpec(palette, th.Components.ListCursor),
+			CursorSelected: styleFromSpec(palette, th.Components.ListCursorSelect),
 		},
 		Preview: panelStyles{
-			Header: styleFromSpec(th.Components.PreviewHeader),
-			Body:   styleFromSpec(th.Components.PreviewBody),
+			Header: styleFromSpec(palette, th.Components.PreviewHeader),
+			Body:   styleFromSpec(palette, th.Components.PreviewBody),
+			Info:   styleFromSpec(palette, th.Components.PreviewInfo),
 		},
-		StatusBar:   styleFromSpec(th.Components.StatusBar),
-		StatusLabel: styleFromSpec(th.Components.StatusLabel),
-		StatusValue: styleFromSpec(th.Components.StatusValue),
-		PromptLabel: styleFromSpec(th.Components.PromptLabel),
-		PromptValue: styleFromSpec(th.Components.PromptValue),
-		Separator:   styleFromSpec(th.Components.Separator),
-		MetaOverlay: styleFromSpec(th.Components.MetaOverlay),
-		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimSpace(th.Borders.Color))),
+		StatusBar:   styleFromSpec(palette, th.Components.StatusBar),
+		StatusLabel: styleFromSpec(palette, th.Components.StatusLabel),
+		StatusValue: styleFromSpec(palette, th.Components.StatusValue),
+		PromptLabel: styleFromSpec(palette, th.Components.PromptLabel),
+		PromptValue: styleFromSpec(palette, th.Components.PromptValue),
+		Separator:   styleFromSpec(palette, th.Components.Separator),
+		MetaOverlay: styleFromSpec(palette, th.Components.MetaOverlay),
+		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette))),
 		SepChar:     borderCharsetFor(th.Borders.Style).Vertical,
 	}
 }
 
-func styleFromSpec(spec theme.StyleSpec) lipgloss.Style {
+func styleFromSpec(p theme.Palette, spec theme.StyleSpec) lipgloss.Style {
 	style := lipgloss.NewStyle()
-	if fg := strings.TrimSpace(spec.FG); fg != "" {
+	if fg := resolveColor(spec.FG, p); fg != "" {
 		style = style.Foreground(lipgloss.Color(fg))
 	}
-	if bg := strings.TrimSpace(spec.BG); bg != "" {
+	if bg := resolveColor(spec.BG, p); bg != "" {
 		style = style.Background(lipgloss.Color(bg))
 	}
 	if spec.Bold {
@@ -93,6 +95,36 @@ func styleFromSpec(spec theme.StyleSpec) lipgloss.Style {
 		style = style.Faint(true)
 	}
 	return style
+}
+
+func resolveColor(value string, palette theme.Palette) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "palette.") {
+		key := strings.TrimPrefix(lower, "palette.")
+		switch key {
+		case "bg":
+			return strings.TrimSpace(palette.BG)
+		case "fg":
+			return strings.TrimSpace(palette.FG)
+		case "muted":
+			return strings.TrimSpace(palette.Muted)
+		case "accent":
+			return strings.TrimSpace(palette.Accent)
+		case "success":
+			return strings.TrimSpace(palette.Success)
+		case "warning":
+			return strings.TrimSpace(palette.Warning)
+		case "danger":
+			return strings.TrimSpace(palette.Danger)
+		case "selection":
+			return strings.TrimSpace(palette.Selection)
+		}
+	}
+	return trimmed
 }
 
 func borderCharsetFor(style string) borderCharset {
