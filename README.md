@@ -152,9 +152,10 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 ## Roadmap
 
 ### New Features and Todo
+
+* [ ] Search by tags
 * [ ] Build file
-* [ ] Yank type
-* [ ] Update and revise README and manual
+* [ ] Yank type (bibtex / plain text)
 * [ ] `gorae logo` command
 
 ### AI features (planned)
