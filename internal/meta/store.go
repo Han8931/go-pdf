@@ -370,6 +370,14 @@ func (s *Store) MovePath(ctx context.Context, oldPath, newPath string) error {
 	return err
 }
 
+func (s *Store) DeletePath(ctx context.Context, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM metadata WHERE path = ?`, path)
+	return err
+}
+
 func (s *Store) MoveTree(ctx context.Context, oldDir, newDir string) error {
 	oldPrefix, err := normalizeDirPrefix(oldDir)
 	if err != nil {
@@ -388,7 +396,20 @@ func (s *Store) MoveTree(ctx context.Context, oldDir, newDir string) error {
 UPDATE metadata
 SET path = ?1 || substr(path, ?2)
 WHERE path LIKE ?3 ESCAPE '\'
-`, newPrefix, start, pattern)
+	`, newPrefix, start, pattern)
+	return err
+}
+
+func (s *Store) DeleteTree(ctx context.Context, dir string) error {
+	prefix, err := normalizeDirPrefix(dir)
+	if err != nil {
+		return err
+	}
+	pattern := escapeLike(prefix) + "%"
+	_, err = s.db.ExecContext(ctx, `
+DELETE FROM metadata
+WHERE path LIKE ? ESCAPE '\'
+`, pattern)
 	return err
 }
 
