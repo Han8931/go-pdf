@@ -608,8 +608,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y", "Y", "enter":
 				deleted := 0
 				var lastErr error
+				var metaErr error
+				var syncErrs []string
+				ctx := context.Background()
 
 				for _, path := range m.confirmItems {
+					canonical := canonicalPath(path)
+					info, err := os.Lstat(path)
+					isDir := false
+					if err == nil {
+						isDir = info.IsDir()
+					}
 					if err := os.RemoveAll(path); err != nil {
 						lastErr = err
 						continue
@@ -617,14 +626,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					deleted++
 					delete(m.selected, path)
 					m.removeFromCut(path)
+
+					if m.meta != nil && canonical != "" {
+						var err error
+						if isDir {
+							err = m.meta.DeleteTree(ctx, canonical)
+						} else {
+							err = m.meta.DeletePath(ctx, canonical)
+						}
+						if err != nil {
+							metaErr = err
+						}
+					}
 				}
 
 				m.confirmItems = nil
 				m.state = stateNormal
 				m.loadEntries()
+				m.updateTextPreview()
+
+				if m.meta != nil {
+					if err := m.syncCollectionDirectories(); err != nil {
+						syncErrs = append(syncErrs, "favorites/to-read: "+err.Error())
+					}
+					if m.recentlyOpenedDir != "" && m.recentlyOpenedLimit > 0 {
+						if err := rebuildRecentlyOpenedDirectory(m.recentlyOpenedDir, m.recentlyOpenedLimit, m.meta); err != nil {
+							syncErrs = append(syncErrs, "recently read: "+err.Error())
+						}
+					}
+				}
+				if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
+					syncErrs = append(syncErrs, "recently added: "+err.Error())
+				}
+
+				var extraParts []string
+				if lastErr != nil && deleted == 0 {
+					m.setStatus("Delete failed: " + lastErr.Error())
+					return m, nil
+				}
+				if lastErr != nil && deleted > 0 {
+					extraParts = append(extraParts, "partial failures: "+lastErr.Error())
+				}
+				if metaErr != nil {
+					extraParts = append(extraParts, "metadata cleanup failed: "+metaErr.Error())
+				}
+				if len(syncErrs) > 0 {
+					extraParts = append(extraParts, strings.Join(syncErrs, "; "))
+				}
+				extra := ""
+				if len(extraParts) > 0 {
+					extra = " (" + strings.Join(extraParts, "; ") + ")"
+				}
 
 				if deleted > 0 {
-					m.setStatus(fmt.Sprintf("Deleted %d item(s).", deleted))
+					m.setStatus(fmt.Sprintf("Deleted %d item(s).%s", deleted, extra))
 				} else if lastErr != nil {
 					m.setStatus("Delete failed: " + lastErr.Error())
 				} else {
