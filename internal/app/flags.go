@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -269,6 +270,12 @@ func (m *Model) showQuickFilter(mode quickFilterMode) tea.Cmd {
 		list, err = m.meta.ListFavorites(ctx)
 	case quickFilterToRead:
 		list, err = m.meta.ListToRead(ctx)
+	case quickFilterRecentlyOpened:
+		limit := m.recentlyOpenedLimit
+		if limit <= 0 {
+			limit = 20
+		}
+		list, err = m.meta.ListRecentlyOpened(ctx, limit)
 	case quickFilterUnread:
 		list, err = m.meta.ListByReadingState(ctx, readingStateUnread)
 	case quickFilterReading:
@@ -342,6 +349,12 @@ func metadataSnippets(md meta.Metadata) []string {
 		lines = append(lines, "Status: "+strings.Join(status, ", "))
 	}
 	lines = append(lines, "Reading: "+readingStateLabel(md.ReadingState))
+	if !md.LastOpenedAt.IsZero() {
+		lines = append(lines, "Opened: "+formatTimestamp(md.LastOpenedAt))
+	}
+	if !md.AddedAt.IsZero() {
+		lines = append(lines, "Added: "+formatTimestamp(md.AddedAt))
+	}
 	if len(lines) == 0 {
 		lines = append(lines, "(no metadata)")
 	}
@@ -364,6 +377,13 @@ const (
 	readingStateReading = "reading"
 	readingStateRead    = "read"
 )
+
+func formatTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format("2006-01-02 15:04")
+}
 
 func normalizeReadingStateValue(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {

@@ -57,6 +57,7 @@ const (
 	quickFilterNone quickFilterMode = iota
 	quickFilterFavorites
 	quickFilterToRead
+	quickFilterRecentlyOpened
 	quickFilterUnread
 	quickFilterReading
 	quickFilterRead
@@ -68,6 +69,8 @@ func (q quickFilterMode) label() string {
 		return "Favorites"
 	case quickFilterToRead:
 		return "To-read"
+	case quickFilterRecentlyOpened:
+		return "Recently read"
 	case quickFilterUnread:
 		return "Unread"
 	case quickFilterReading:
@@ -85,6 +88,8 @@ func (q quickFilterMode) labelLower() string {
 		return "favorites"
 	case quickFilterToRead:
 		return "to-read"
+	case quickFilterRecentlyOpened:
+		return "recently read"
 	case quickFilterUnread:
 		return "unread"
 	case quickFilterReading:
@@ -268,6 +273,37 @@ func canonicalPath(path string) string {
 		path = abs
 	}
 	return path
+}
+
+func (m *Model) searchSkipDirs() []string {
+	if m == nil {
+		return nil
+	}
+	dirs := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		clean := canonicalPath(path)
+		if clean == "" {
+			clean = filepath.Clean(path)
+		}
+		if clean == "" {
+			return
+		}
+		if _, exists := seen[clean]; exists {
+			return
+		}
+		seen[clean] = struct{}{}
+		dirs = append(dirs, clean)
+	}
+	add(m.recentlyAddedDir)
+	add(m.recentlyOpenedDir)
+	add(m.favoritesDir)
+	add(m.toReadDir)
+	return dirs
 }
 
 const (

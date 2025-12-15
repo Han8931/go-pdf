@@ -790,6 +790,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "T":
 			return m, m.showQuickFilter(quickFilterToRead)
 
+		case "O":
+			return m, m.showQuickFilter(quickFilterRecentlyOpened)
+
 		case "r":
 			m.cycleReadingState()
 			return m, nil
@@ -2121,6 +2124,7 @@ func (m *Model) buildSearchRequest(tokens []string) (searchRequest, error) {
 		return searchRequest{}, fmt.Errorf("Search query cannot be empty")
 	}
 	req.query = query
+	req.skipDirs = m.searchSkipDirs()
 	return req, nil
 }
 

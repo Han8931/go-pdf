@@ -1,12 +1,10 @@
 package app
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,123 +12,71 @@ import (
 )
 
 func (m *Model) recordRecentlyOpened(path string) {
-	if path == "" || m.recentlyOpenedDir == "" || m.recentlyOpenedLimit <= 0 {
+	if path == "" {
 		return
 	}
-	if err := updateRecentlyOpenedDirectory(m.recentlyOpenedDir, path, m.recentlyOpenedLimit, m.meta); err != nil {
-		m.setStatus("Recently read update failed: " + err.Error())
+	canonical := canonicalPath(path)
+	if canonical == "" {
+		return
+	}
+	now := time.Now()
+	if m.meta != nil {
+		ctx := context.Background()
+		if err := m.meta.RecordOpened(ctx, canonical, now); err != nil {
+			m.setStatus("Recently read update failed: " + err.Error())
+		}
+	}
+	if m.meta == nil || m.recentlyOpenedDir == "" || m.recentlyOpenedLimit <= 0 {
+		return
+	}
+	if err := rebuildRecentlyOpenedDirectory(m.recentlyOpenedDir, m.recentlyOpenedLimit, m.meta); err != nil {
+		m.setStatus("Recently read directory sync failed: " + err.Error())
 	}
 }
 
-func updateRecentlyOpenedDirectory(dest, openedPath string, limit int, store *meta.Store) error {
-	if dest == "" || openedPath == "" || limit <= 0 {
+func rebuildRecentlyOpenedDirectory(dest string, limit int, store *meta.Store) error {
+	if dest == "" || limit <= 0 || store == nil {
 		return nil
 	}
-
 	destAbs, err := filepath.Abs(dest)
 	if err != nil {
 		return err
 	}
-	targetAbs, err := filepath.Abs(openedPath)
-	if err != nil {
-		return err
-	}
-	targetAbs = canonicalPath(targetAbs)
-
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		return err
 	}
 
+	ctx := context.Background()
+	list, err := store.ListRecentlyOpened(ctx, limit)
+	if err != nil {
+		return err
+	}
+
 	dirEntries, err := os.ReadDir(destAbs)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	if err == nil {
+		for _, entry := range dirEntries {
+			_ = os.RemoveAll(filepath.Join(destAbs, entry.Name()))
+		}
 	}
 
-	for _, entry := range dirEntries {
-		linkPath := filepath.Join(destAbs, entry.Name())
-		info, err := os.Lstat(linkPath)
+	for _, md := range list {
+		target := strings.TrimSpace(md.Path)
+		if target == "" {
+			continue
+		}
+		openedAt := md.LastOpenedAt
+		if openedAt.IsZero() {
+			openedAt = time.Now()
+		}
+		linkName := recentLinkName(filepath.Base(target), md.Title, md.Year, openedAt)
+		linkPath := filepath.Join(destAbs, linkName)
+		relTarget, err := filepath.Rel(filepath.Dir(linkPath), target)
 		if err != nil {
-			continue
+			relTarget = target
 		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			continue
+		if err := os.Symlink(relTarget, linkPath); err != nil {
+			return fmt.Errorf("creating recently opened link for %s: %w", target, err)
 		}
-		target, err := os.Readlink(linkPath)
-		if err != nil {
-			continue
-		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(destAbs, target)
-		}
-		if filepath.Clean(target) == filepath.Clean(targetAbs) {
-			_ = os.Remove(linkPath)
-		}
-	}
-
-	title, year := lookupMetadataLabels(store, targetAbs)
-	linkName := recentLinkName(filepath.Base(targetAbs), title, year, time.Now())
-	linkPath := filepath.Join(destAbs, linkName)
-	relTarget, err := filepath.Rel(filepath.Dir(linkPath), targetAbs)
-	if err != nil {
-		relTarget = targetAbs
-	}
-	if err := os.Symlink(relTarget, linkPath); err != nil {
-		return fmt.Errorf("creating recently opened link for %s: %w", targetAbs, err)
-	}
-
-	return trimRecentlyOpened(destAbs, limit)
-}
-
-func trimRecentlyOpened(dest string, limit int) error {
-	dirEntries, err := os.ReadDir(dest)
-	if err != nil {
-		return err
-	}
-
-	type linkInfo struct {
-		name    string
-		ts      time.Time
-		hasTS   bool
-		modTime time.Time
-	}
-	links := make([]linkInfo, 0, len(dirEntries))
-	for _, entry := range dirEntries {
-		path := filepath.Join(dest, entry.Name())
-		info, err := os.Lstat(path)
-		if err != nil {
-			continue
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			continue
-		}
-		ts, ok := parseRecentLinkTimestamp(entry.Name())
-		links = append(links, linkInfo{
-			name:    entry.Name(),
-			ts:      ts,
-			hasTS:   ok,
-			modTime: info.ModTime(),
-		})
-	}
-	if len(links) <= limit {
-		return nil
-	}
-
-	sort.Slice(links, func(i, j int) bool {
-		if links[i].hasTS && links[j].hasTS {
-			if !links[i].ts.Equal(links[j].ts) {
-				return links[i].ts.Before(links[j].ts)
-			}
-			return links[i].name < links[j].name
-		}
-		if links[i].hasTS != links[j].hasTS {
-			return !links[i].hasTS
-		}
-		return links[i].modTime.Before(links[j].modTime)
-	})
-
-	excess := len(links) - limit
-	for i := 0; i < excess; i++ {
-		_ = os.Remove(filepath.Join(dest, links[i].name))
 	}
 	return nil
 }

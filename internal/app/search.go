@@ -35,6 +35,7 @@ type searchRequest struct {
 	caseSensitive bool
 	wrapWidth     int
 	metaStore     *meta.Store
+	skipDirs      []string
 }
 
 type searchResultMsg struct {
@@ -114,7 +115,7 @@ func performSearch(req searchRequest) (searchAggregate, string, error) {
 		wrapWidth = 80
 	}
 
-	files, walkWarnings, err := collectPDFFiles(req.root)
+	files, walkWarnings, err := collectPDFFiles(req.root, req.skipDirs)
 	if err != nil {
 		return searchAggregate{}, "", err
 	}
@@ -191,17 +192,69 @@ func formatSearchSummary(req searchRequest, agg searchAggregate) string {
 	return summary
 }
 
-func collectPDFFiles(root string) ([]string, []string, error) {
+func collectPDFFiles(root string, skipDirs []string) ([]string, []string, error) {
 	files := make([]string, 0, 32)
 	warnings := make([]string, 0)
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+
+	rootPath := canonicalPath(root)
+	if rootPath == "" {
+		rootPath = filepath.Clean(root)
+	}
+	if rootPath == "" {
+		rootPath = "."
+	}
+
+	type skipEntry struct {
+		path   string
+		prefix string
+	}
+	skipEntries := make([]skipEntry, 0, len(skipDirs))
+	for _, dir := range skipDirs {
+		dir = canonicalPath(strings.TrimSpace(dir))
+		if dir == "" || dir == rootPath {
+			continue
+		}
+		clean := filepath.Clean(dir)
+		rel, err := filepath.Rel(rootPath, clean)
+		if err != nil {
+			continue
+		}
+		if rel == "." || rel == ".." || strings.HasPrefix(rel, fmt.Sprintf("..%c", os.PathSeparator)) {
+			continue
+		}
+		skipEntries = append(skipEntries, skipEntry{
+			path:   clean,
+			prefix: clean + string(os.PathSeparator),
+		})
+	}
+
+	shouldSkip := func(path string) bool {
+		if len(skipEntries) == 0 {
+			return false
+		}
+		clean := filepath.Clean(path)
+		for _, entry := range skipEntries {
+			if clean == entry.path || strings.HasPrefix(clean, entry.prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			warnings = append(warnings, fmt.Sprintf("[WARN] %s: %v", path, walkErr))
 			return nil
 		}
 		name := d.Name()
+		if shouldSkip(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
-			if path != root && strings.HasPrefix(name, ".") {
+			if path != rootPath && strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
 			}
 			return nil

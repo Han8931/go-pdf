@@ -185,6 +185,7 @@ Quick filters:
 
 * `F`  Show favorites papers
 * `T`  Show to-read papers
+* `O`  Show recently read papers (DB history)
 
 
 ## Status bar & command palette
@@ -203,4 +204,3 @@ Quick filters:
 * Use helper folders (`Favorites/`, `To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
 
 Enjoy exploring your papers with Gorae! If you run into issues or have feature ideas, please open a GitHub issuewe'd love to hear from fellow readers.
-
