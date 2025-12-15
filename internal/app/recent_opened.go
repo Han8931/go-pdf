@@ -95,7 +95,7 @@ func rebuildRecentlyOpenedDirectory(dest string, limit int, store *meta.Store) e
 		if openedAt.IsZero() {
 			openedAt = time.Now()
 		}
-		linkName := recentLinkName(filepath.Base(target), md.Title, md.Year, openedAt)
+		linkName := mapBackedLinkName(filepath.Base(target), md.Title, md.Year, desired)
 		desired[linkName] = target
 	}
 
@@ -123,40 +123,4 @@ func rebuildRecentlyOpenedDirectory(dest string, limit int, store *meta.Store) e
 	}
 
 	return nil
-}
-
-const recentLinkTimestampLayout = "20060102T150405.000000000Z"
-
-func recentLinkName(baseName, title, year string, openedAt time.Time) string {
-	base := buildLinkBase(baseName, title, year)
-	ts := openedAt.UTC().Format(recentLinkTimestampLayout)
-	return fmt.Sprintf("%s-%s", ts, base)
-}
-
-func parseRecentLinkTimestamp(name string) (time.Time, bool) {
-	idx := strings.IndexByte(name, '-')
-	if idx <= 0 {
-		return time.Time{}, false
-	}
-	tsStr := name[:idx]
-	ts, err := time.Parse(recentLinkTimestampLayout, tsStr)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return ts, true
-}
-
-func stripRecentLinkPrefix(name string) string {
-	idx := strings.IndexByte(name, '-')
-	if idx <= 0 {
-		return name
-	}
-	if _, ok := parseRecentLinkTimestamp(name); !ok {
-		return name
-	}
-	trimmed := name[idx+1:]
-	if trimmed == "" {
-		return name
-	}
-	return trimmed
 }

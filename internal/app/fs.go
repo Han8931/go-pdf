@@ -434,8 +434,6 @@ func (m *Model) normalizedEntryBase(name, fullPath string) string {
 			if targetName != "" {
 				base = strings.TrimSuffix(targetName, filepath.Ext(targetName))
 			}
-		} else if m.cwdIsRecentlyOpened {
-			base = stripRecentLinkPrefix(base)
 		}
 	}
 	if base == "" {
