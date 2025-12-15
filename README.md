@@ -52,7 +52,7 @@ Commands:
 
 Batch apply:
 * Select multiple files, then run:
-  * `:arxiv -v <id>` (applies to selected files)
+  * `:arxiv -v` (applies to selected files)
 
 ## Install
 
