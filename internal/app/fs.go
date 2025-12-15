@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 
@@ -16,7 +17,18 @@ import (
 )
 
 func (m *Model) loadEntries() {
-	if err := m.maybeSyncRecentlyAddedDir(false); err != nil {
+	needSyncRecent := false
+	if info, err := os.Stat(m.cwd); err == nil {
+		age := time.Since(info.ModTime())
+		if age < time.Minute {
+			needSyncRecent = true
+		}
+	}
+	if needSyncRecent {
+		if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
+			m.setStatus("Recently added sync failed: " + err.Error())
+		}
+	} else if err := m.maybeSyncRecentlyAddedDir(false); err != nil {
 		m.setStatus("Recently added sync failed: " + err.Error())
 	}
 	cwdCanonical := canonicalPath(m.cwd)
