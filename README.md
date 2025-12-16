@@ -153,10 +153,15 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ### New Features and Todo
 
+* [ ] Support mouse
+* [ ] DOI Extraction
+* [ ] New file autodetection
+* [ ] Git
+* [ ] Open a file at a certain position
 * [ ] Search by tags
-* [ ] Build file
 * [ ] Yank type (bibtex / plain text)
 * [ ] `gorae logo` command
+* [x] Build file
 
 ### AI features (planned)
 
