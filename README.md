@@ -13,6 +13,7 @@
 * Vim-style fast file browser with favorites, to-read, and reading states.
 * Favorites, to-read list, and reading states backed by metadata.
 * Search by metadata or full text with previews/snippets.
+* Auto-detect DOI/arXiv identifiers inside PDFs to import metadata automatically.
 * Edit metadata in-app, import from arXiv, and copy BibTeX.
 * Themeable UI (colors, glyphs, borders) plus helper folders you can browse in any file manager.
 
@@ -53,6 +54,15 @@ Commands:
 Batch apply:
 * Select multiple files, then run:
   * `:arxiv -v` (applies to selected files)
+
+### Auto metadata detection
+
+Let Gorae scan PDFs for DOI or arXiv identifiers and populate metadata automatically:
+
+* `:autofetch [files...]` scans the current file (or specified files) for identifiers.
+* `:autofetch -v` applies to the current selection.
+
+Behind the scenes, Gorae uses Crossref (DOI) and the arXiv API, so the same network requirements as `:arxiv` apply. The command relies on `pdftotext`, so make sure Poppler tools are installed.
 
 ## Install
 
@@ -154,7 +164,7 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 ### New Features and Todo
 
 * [ ] Support mouse
-* [ ] DOI Extraction
+* [x] DOI extraction / auto metadata detection
 * [ ] New file autodetection
 * [ ] Git
 * [ ] Open a file at a certain position
@@ -185,4 +195,3 @@ That's it—you can re-clone and reinstall at any time.
 ## Acknowledgements
 
 <!-- TODO: Add libraries/tools you use (Bubble Tea, Bubbles, Lip Gloss, Poppler, etc.) -->
-

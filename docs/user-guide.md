@@ -143,7 +143,17 @@ Batch apply:
 * Select multiple files, then run:
   * `:arxiv -v <id>` (applies to selected files)
 
-> Currently, arXiv is the only supported source for automatic metadata/BibTeX fetching.
+> Tip: Want zero typing? Run `:autofetch` to detect DOI or arXiv IDs from the PDF text automatically.
+
+## Auto metadata detection
+
+Use `:autofetch` to scan PDFs for DOI or arXiv identifiers and pull metadata automatically (Crossref + arXiv):
+
+* `:autofetch` operates on the current file (or the selection if nothing is passed).
+* `:autofetch -v` restricts the command to the current selection.
+* `:autofetch <files...>` takes explicit file paths relative to the current directory.
+
+The command relies on `pdftotext` (Poppler) to read the PDF text. Make sure Poppler tools are installed and reachable from `PATH`.
 
 ---
 

@@ -139,6 +139,74 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus(summary)
 		return m, nil
 
+	case autoMetadataMsg:
+		if len(msg.Results) == 0 {
+			m.setStatus("Auto metadata completed")
+			return m, nil
+		}
+		var (
+			updatedPaths []string
+			failures     []string
+			doiCount     int
+			arxivCount   int
+		)
+		for _, res := range msg.Results {
+			if res.Err != nil {
+				name := filepath.Base(res.Path)
+				if name == "" {
+					name = res.Path
+				}
+				failures = append(failures, fmt.Sprintf("%s (%s)", name, res.Err.Error()))
+				continue
+			}
+			updatedPaths = append(updatedPaths, res.Path)
+			if res.Source == metadataSourceDOI {
+				doiCount++
+			} else if res.Source == metadataSourceArxiv {
+				arxivCount++
+			}
+		}
+		if len(updatedPaths) > 0 {
+			current := m.currentEntryPath()
+			m.resortAndPreserveSelection()
+			for _, path := range updatedPaths {
+				if m.currentMetaPath == path {
+					m.currentMetaPath = ""
+					m.updateCurrentMetadata(path)
+				}
+				if current != "" && current == path {
+					m.updateTextPreview()
+				}
+			}
+		}
+		var sourceParts []string
+		if doiCount > 0 {
+			sourceParts = append(sourceParts, fmt.Sprintf("%d DOI", doiCount))
+		}
+		if arxivCount > 0 {
+			sourceParts = append(sourceParts, fmt.Sprintf("%d arXiv", arxivCount))
+		}
+
+		status := ""
+		if len(updatedPaths) > 0 {
+			label := "Auto metadata applied"
+			if len(sourceParts) > 0 {
+				label = fmt.Sprintf("%s (%s)", label, strings.Join(sourceParts, " + "))
+			}
+			status = fmt.Sprintf("%s to %d file(s)", label, len(updatedPaths))
+		} else {
+			status = "Auto metadata completed, but no files were updated"
+		}
+		if len(failures) > 0 {
+			display := append([]string{}, failures...)
+			if len(display) > 2 {
+				display = append(display[:2], "...")
+			}
+			status = fmt.Sprintf("%s; failed: %s", status, strings.Join(display, ", "))
+		}
+		m.setStatus(status)
+		return m, nil
+
 	case searchResultMsg:
 		if msg.err != nil {
 			m.setStatus("Search failed: " + msg.err.Error())
@@ -1527,6 +1595,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		return m.handleThemeCommand(args)
 	case "arxiv":
 		return m.handleArxivCommand(args)
+	case "autofetch":
+		return m.handleAutoMetadataCommand(args)
 	case "search":
 		return m.handleSearchCommand(args)
 	case "q", "quit":
@@ -1790,6 +1860,7 @@ func buildHelpOutput() []string {
 		"  f / t / r .... favorite / to-read / cycle reading state",
 		"  y ............ copy BibTeX",
 		"  :arxiv ....... fetch arXiv metadata (:arxiv -v for selected files)",
+		"  :autofetch ... detect DOI/arXiv IDs in PDFs and import metadata",
 		"",
 		"Search & Lists",
 		"  / or :search . search content or metadata (-t/-a/-c/-y flags)",
@@ -2000,16 +2071,7 @@ func detectArxivIDsFromFilenames(files []string) (map[string][]string, []string)
 
 func extractArxivIDFromFilename(path string) string {
 	name := filepath.Base(path)
-	if name == "" {
-		return ""
-	}
-	if match := arxivModernIDPattern.FindStringSubmatch(name); len(match) > 0 {
-		return normalizeArxivMatch(match)
-	}
-	if match := arxivLegacyIDPattern.FindStringSubmatch(name); len(match) > 0 {
-		return normalizeArxivMatch(match)
-	}
-	return ""
+	return extractArxivIDFromString(name)
 }
 
 func normalizeArxivMatch(match []string) string {
@@ -2496,6 +2558,7 @@ var commandNames = []string{
 	"recent",
 	"config",
 	"arxiv",
+	"autofetch",
 	"search",
 	"q", "quit",
 }
