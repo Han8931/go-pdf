@@ -58,7 +58,7 @@ You can scope the search with flags:
 - `/ -t transformer`
 - `/ -a "Yoshua Bengio"`
 - `/ -y 2023 -t diffusion`
-- `/ -c attention --tag to-read`
+- `/ -c attention`
 - `/ --tag llm,graph`
 
 ### Fetch arXiv metadata
