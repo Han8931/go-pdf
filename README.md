@@ -22,7 +22,7 @@
 
 ## Demo
 <p align="center">
-  <img src="gorae_app.png" alt="Gorae app" width="300">
+  <img src="gorae_app.png" alt="Gorae app" width="600">
 </p>
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
