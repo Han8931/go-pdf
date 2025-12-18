@@ -29,7 +29,7 @@
 
 ## Everyday use
 
-> For deeper instructions, read **[docs/user-guide.md](docs/user-guide.md)** or run `:help`.
+> For deeper instructions, read **[Wiki](https://github.com/Han8931/gorae/wiki)** or run `:help`.
 
 | Action             | Key       |
 | ------------------ | --------- |
