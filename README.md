@@ -41,14 +41,25 @@
 
 > Arrow keys are also supported.
 
-### Search tips
+### 🔎 Search tips
 
-Search (`/`) with flags like:
+Press `/` to open search, then type your query.
 
-* `-t [title]`
-* `-a [author]`
-* `-y [year]`
-* `-c [content]`
+You can scope the search with flags:
+
+- `-t <title>`     search in title
+- `-a <author>`    search in author
+- `-y <year>`      filter by year
+- `-c <keyword>`   search in full text (content)
+- `--tag <tag>`    filter by a single tag
+- `--tag <t1,t2>`  filter by multiple tags (comma-separated)
+
+**Examples**
+- `/ -t transformer`
+- `/ -a "Yoshua Bengio"`
+- `/ -y 2023 -t diffusion`
+- `/ -c attention --tag to-read`
+- `/ --tag llm,graph`
 
 ### Fetch arXiv metadata
 
@@ -148,7 +159,8 @@ cp themes/matcha.toml ~/.config/gorae/theme.toml
 
 ## Recommended PDF viewer
 
-Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend. Zathura is minimal, keyboard-driven, starts instantly, supports vi-style navigation, and renders beautifully through MuPDF—great for tiling window managers.
+- Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend. 
+- Zathura is minimal, keyboard-driven, starts instantly, supports vi-style navigation, and renders beautifully through MuPDF—great for tiling window managers.
 
 Install:
 

@@ -1364,6 +1364,7 @@ func (m *Model) openPDF(path string) error {
 	if viewer == "" {
 		viewer = strings.TrimSpace(config.DefaultPDFViewer())
 	}
+
 	parts, err := splitCommandLine(viewer)
 	if err != nil {
 		return err
@@ -1371,9 +1372,35 @@ func (m *Model) openPDF(path string) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("no PDF viewer configured")
 	}
-	args := append([]string{}, parts[1:]...)
+
+	resolveViewer := func(parts []string) (string, []string, error) {
+		name := parts[0]
+		if _, err := exec.LookPath(name); err != nil {
+			return "", nil, err
+		}
+		return name, parts[1:], nil
+	}
+
+	name, extraArgs, err := resolveViewer(parts)
+	if err != nil {
+		// Fallback to detected default if preferred viewer (e.g., zathura) is missing.
+		fallback := strings.TrimSpace(config.DefaultPDFViewer())
+		if fallback == "" || fallback == viewer {
+			return fmt.Errorf("PDF viewer not found: %s", viewer)
+		}
+		fbParts, fbErr := splitCommandLine(fallback)
+		if fbErr != nil || len(fbParts) == 0 {
+			return fmt.Errorf("PDF viewer not found: %s", viewer)
+		}
+		name, extraArgs, err = resolveViewer(fbParts)
+		if err != nil {
+			return fmt.Errorf("PDF viewer not found: %s", viewer)
+		}
+	}
+
+	args := append([]string{}, extraArgs...)
 	args = append(args, path)
-	cmd := exec.Command(parts[0], args...)
+	cmd := exec.Command(name, args...)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
