@@ -1117,44 +1117,70 @@ func (m *Model) updateTextPreview() {
 		}
 	}
 
-	// Non-PDFs: no text preview
+	// Handle PDF/EPUB previews
 	name := e.Name()
 	if err == nil {
 		name = info.Name()
 	}
-	if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".pdf":
+		// If we already have preview for this file, keep it
+		if m.previewPath == full && len(m.previewText) > 0 {
+			return
+		}
+
 		m.previewPath = full
-		m.previewText = []string{
-			"No preview (not a PDF)",
-			"",
-			name,
+
+		// approximate how many lines we can show
+		maxLines := m.viewportHeight - 2
+		if maxLines < 5 {
+			maxLines = 5
 		}
+
+		lines, err := extractFirstPageText(full, maxLines)
+		if err != nil {
+			m.previewText = []string{
+				"Preview error:",
+				"  " + err.Error(),
+			}
+			return
+		}
+
+		m.previewText = lines
+		return
+
+	case ".epub":
+		// If we already have preview for this file, keep it
+		if m.previewPath == full && len(m.previewText) > 0 {
+			return
+		}
+
+		m.previewPath = full
+		maxLines := m.viewportHeight - 2
+		if maxLines < 5 {
+			maxLines = 5
+		}
+		lines, err := extractEPUBPreview(full, maxLines)
+		if err != nil {
+			m.previewText = []string{
+				"Preview error:",
+				"  " + err.Error(),
+			}
+			return
+		}
+		m.previewText = lines
 		return
 	}
 
-	// If we already have preview for this file, keep it
-	if m.previewPath == full && len(m.previewText) > 0 {
-		return
-	}
-
+	// Fallback for other file types
 	m.previewPath = full
-
-	// approximate how many lines we can show
-	maxLines := m.viewportHeight - 2
-	if maxLines < 5 {
-		maxLines = 5
+	m.previewText = []string{
+		"No preview (unsupported type)",
+		"",
+		name,
 	}
-
-	lines, err := extractFirstPageText(full, maxLines)
-	if err != nil {
-		m.previewText = []string{
-			"Preview error:",
-			"  " + err.Error(),
-		}
-		return
-	}
-
-	m.previewText = lines
+	return
 }
 
 func (m *Model) selectedPaths() []string {
@@ -1187,7 +1213,8 @@ func (m *Model) directoryPreviewContents(dir string) []string {
 		}
 		if !entry.IsDir() {
 			name := strings.ToLower(entry.Name())
-			if !strings.HasSuffix(name, ".pdf") {
+			ext := filepath.Ext(name)
+			if ext != ".pdf" && ext != ".epub" {
 				continue
 			}
 		}

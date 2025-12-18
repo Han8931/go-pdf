@@ -97,7 +97,7 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 		if strings.HasPrefix(name, ".") {
 			return nil
 		}
-		if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		if !isDocument(name) {
 			return nil
 		}
 

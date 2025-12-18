@@ -805,18 +805,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadEntries()
 				m.clearStatus()
 				m.updateTextPreview() // <── NEW
-			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
+			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") || strings.HasSuffix(strings.ToLower(entry.Name()), ".epub") {
 				openPath := full
 				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
 					openPath = canonicalPath(full)
 				}
 				if err := m.openPDF(openPath); err != nil {
-					m.setStatus("Failed to open PDF: " + err.Error())
+					m.setStatus("Failed to open file: " + err.Error())
 				} else if !m.cwdIsRecentlyOpened {
 					m.recordRecentlyOpened(openPath)
 				}
 			} else {
-				m.setStatus("Not a PDF")
+				m.setStatus("Not a supported document")
 			}
 
 		case "h", "backspace", "left":

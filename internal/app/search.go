@@ -116,7 +116,7 @@ func performSearch(req searchRequest) (searchAggregate, string, error) {
 		wrapWidth = 80
 	}
 
-	files, walkWarnings, err := collectPDFFiles(req.root, req.skipDirs)
+	files, walkWarnings, err := collectDocumentFiles(req.root, req.skipDirs)
 	if err != nil {
 		return searchAggregate{}, "", err
 	}
@@ -193,7 +193,7 @@ func formatSearchSummary(req searchRequest, agg searchAggregate) string {
 	return summary
 }
 
-func collectPDFFiles(root string, skipDirs []string) ([]string, []string, error) {
+func collectDocumentFiles(root string, skipDirs []string) ([]string, []string, error) {
 	files := make([]string, 0, 32)
 	warnings := make([]string, 0)
 
@@ -263,7 +263,7 @@ func collectPDFFiles(root string, skipDirs []string) ([]string, []string, error)
 		if strings.HasPrefix(name, ".") {
 			return nil
 		}
-		if ext := filepath.Ext(name); ext != "" && strings.EqualFold(ext, ".pdf") {
+		if ext := strings.ToLower(filepath.Ext(name)); ext == ".pdf" || ext == ".epub" {
 			files = append(files, path)
 		}
 		return nil
@@ -272,16 +272,56 @@ func collectPDFFiles(root string, skipDirs []string) ([]string, []string, error)
 }
 
 func evaluatePath(path string, req searchRequest) (searchMatch, bool, error) {
+	ext := strings.ToLower(filepath.Ext(path))
 	switch req.mode {
 	case searchModeContent:
+		if ext == ".epub" {
+			return searchEPUBContent(path, req.query, req.caseSensitive, req.wrapWidth, req.metaStore)
+		}
 		return searchPDFContent(path, req.query, req.caseSensitive, req.wrapWidth, req.metaStore)
 	default:
+		if ext == ".epub" {
+			return searchEPUBMetadata(path, req.mode, req.query, req.caseSensitive, req.metaStore)
+		}
 		return searchPDFMetadata(path, req.mode, req.query, req.caseSensitive, req.metaStore)
 	}
 }
 
 func searchPDFContent(path, query string, caseSensitive bool, wrapWidth int, store *meta.Store) (searchMatch, bool, error) {
 	text, err := readPDFText(path)
+	if err != nil {
+		return searchMatch{}, false, err
+	}
+	positions := findAllMatches(text, query, caseSensitive)
+	if len(positions) == 0 {
+		return searchMatch{}, false, nil
+	}
+	maxSnippets := maxSnippetsPerFile
+	if maxSnippets > len(positions) {
+		maxSnippets = len(positions)
+	}
+	snippets := make([]string, 0, maxSnippets)
+	for i := 0; i < maxSnippets; i++ {
+		pos := positions[i]
+		snippet := makeSnippet(text, pos, len(query), query, caseSensitive, wrapWidth)
+		snippets = append(snippets, snippet)
+	}
+	if len(positions) > maxSnippetsPerFile {
+		extra := len(positions) - maxSnippetsPerFile
+		snippets = append(snippets, fmt.Sprintf("(+%d more match(es) in this file)", extra))
+	}
+	match := searchMatch{
+		Path:       path,
+		Mode:       searchModeContent,
+		MatchCount: len(positions),
+		Snippets:   snippets,
+	}
+	populateMatchDisplay(&match, store)
+	return match, true, nil
+}
+
+func searchEPUBContent(path, query string, caseSensitive bool, wrapWidth int, store *meta.Store) (searchMatch, bool, error) {
+	text, err := readEPUBText(path)
 	if err != nil {
 		return searchMatch{}, false, err
 	}
@@ -440,12 +480,92 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 	return match, true, nil
 }
 
+func searchEPUBMetadata(path string, mode searchMode, query string, caseSensitive bool, store *meta.Store) (searchMatch, bool, error) {
+	var stored *meta.Metadata
+	canonical := canonicalPath(path)
+	if store != nil {
+		ctx := context.Background()
+		data, err := store.Get(ctx, canonical)
+		if err != nil {
+			return searchMatch{}, false, fmt.Errorf("load metadata: %w", err)
+		}
+		if data != nil {
+			stored = data
+		}
+	}
+
+	metaInfo := pdfMeta{}
+	if stored != nil {
+		metaInfo.Title = strings.TrimSpace(stored.Title)
+		metaInfo.Author = strings.TrimSpace(stored.Author)
+		metaInfo.Tag = strings.TrimSpace(stored.Tag)
+		metaInfo.CreationDate = strings.TrimSpace(stored.Year)
+	}
+	if strings.TrimSpace(metaInfo.Title) == "" || strings.TrimSpace(metaInfo.Author) == "" || strings.TrimSpace(metaInfo.CreationDate) == "" {
+		if parsed, err := parseEPUBMetadata(path); err == nil {
+			if metaInfo.Title == "" && parsed.Title != "" {
+				metaInfo.Title = parsed.Title
+			}
+			if metaInfo.Author == "" && parsed.Author != "" {
+				metaInfo.Author = parsed.Author
+			}
+			if metaInfo.CreationDate == "" && parsed.Year != "" {
+				metaInfo.CreationDate = parsed.Year
+			}
+		}
+	}
+
+	var field string
+	switch mode {
+	case searchModeTitle:
+		field = metaInfo.Title
+	case searchModeAuthor:
+		field = metaInfo.Author
+	case searchModeYear:
+		field = metaInfo.CreationDate
+	case searchModeTag:
+		field = metaInfo.Tag
+	}
+
+	if strings.TrimSpace(field) == "" {
+		return searchMatch{}, false, nil
+	}
+
+	target := field
+	needle := query
+	if !caseSensitive {
+		target = strings.ToLower(target)
+		needle = strings.ToLower(needle)
+	}
+	if !strings.Contains(target, needle) {
+		return searchMatch{}, false, nil
+	}
+
+	lines := []string{
+		fmt.Sprintf("Title        : %s", highlightField(metaInfo.Title, query, caseSensitive)),
+		fmt.Sprintf("Author       : %s", highlightField(metaInfo.Author, query, caseSensitive)),
+		fmt.Sprintf("Year         : %s", highlightField(metaInfo.CreationDate, query, caseSensitive)),
+		fmt.Sprintf("Tag          : %s", highlightField(metaInfo.Tag, query, caseSensitive)),
+	}
+
+	match := searchMatch{
+		Path:       path,
+		Mode:       mode,
+		MatchCount: 1,
+		Snippets:   lines,
+		Meta:       metaInfo,
+	}
+	populateMatchDisplay(&match, store)
+	return match, true, nil
+}
+
 type pdfMeta struct {
 	Title        string
 	Author       string
 	Tag          string
 	CreationDate string
 	ModDate      string
+	Year         string
 }
 
 func populateMatchDisplay(match *searchMatch, store *meta.Store) {
@@ -473,14 +593,21 @@ func populateMatchDisplay(match *searchMatch, store *meta.Store) {
 		}
 	}
 	if title == "" {
-		title = untitledPlaceholder
+		if match.Path != "" {
+			if base := filepath.Base(match.Path); base != "" {
+				title = base
+			}
+		}
+		if title == "" {
+			title = untitledPlaceholder
+		}
 	}
 	match.Title = title
 	match.Year = year
 }
 
 func firstYearFromMeta(meta pdfMeta) string {
-	candidates := []string{meta.CreationDate, meta.ModDate}
+	candidates := []string{meta.Year, meta.CreationDate, meta.ModDate}
 	for _, candidate := range candidates {
 		if year := extractMatchYear(candidate); year != "" {
 			return year

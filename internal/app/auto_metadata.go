@@ -360,7 +360,7 @@ func filterPDFPaths(paths []string) []string {
 		if err != nil || info.IsDir() {
 			continue
 		}
-		if !isPDF(p) {
+		if !isDocument(p) {
 			continue
 		}
 		out = append(out, p)
@@ -370,4 +370,13 @@ func filterPDFPaths(paths []string) []string {
 
 func isPDF(path string) bool {
 	return strings.EqualFold(filepath.Ext(path), ".pdf")
+}
+
+func isEPUB(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".epub")
+}
+
+func isDocument(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".pdf" || ext == ".epub"
 }

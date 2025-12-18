@@ -61,7 +61,7 @@ func (m *Model) loadEntries() {
 		return
 	}
 
-	// hide dotfiles and non-PDF files (but keep directories)
+		// hide dotfiles and non-document files (but keep directories)
 	filtered := make([]fs.DirEntry, 0, len(ents))
 	notesDir := strings.TrimSpace(m.notesDir)
 	noteAbs := ""
@@ -81,7 +81,8 @@ func (m *Model) loadEntries() {
 
 		if !e.IsDir() {
 			name := strings.ToLower(e.Name())
-			if !strings.HasSuffix(name, ".pdf") {
+			ext := filepath.Ext(name)
+			if ext != ".pdf" && ext != ".epub" {
 				continue
 			}
 		}
