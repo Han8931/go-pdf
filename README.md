@@ -4,7 +4,7 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs and EPUBs** — fast browsing, solid metadata, quick search, and **mouse support** for people who live in **Vim/CLI**.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs and EPUBs**—fast browsing, solid metadata, quick search, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, and EndNote**.
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
@@ -185,8 +185,6 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 * [ ] ToDo management
 * [ ] Gif file
-* [ ] Open a file at a certain position
-* [ ] `gorae logo` command
 * [ ] Vault warden for cloud support
 * [ ] WebServer
 
