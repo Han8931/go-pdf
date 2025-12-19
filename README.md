@@ -60,7 +60,7 @@ You can scope the search with flags:
 **Examples**
 - `/ -t transformer`
 - `/ -a "Yoshua Bengio"`
-- `/ -y 2023 -t diffusion`
+- `/ -y 2023`
 - `/ -c attention`
 - `/ --tag llm,graph`
 
