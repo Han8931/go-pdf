@@ -187,6 +187,7 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 * [ ] Gif file
 * [ ] Vault warden for cloud support
 * [ ] WebServer
+* [ ] Trash
 
 ### AI features (planned)
 
