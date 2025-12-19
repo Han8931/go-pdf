@@ -1081,11 +1081,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			if err := m.copyBibtexToClipboard(); err != nil {
-				m.setStatus("BibTeX copy failed: " + err.Error())
-			} else {
-				m.setStatus("BibTeX copied to clipboard")
-			}
+			// Single 'y' waits for next key (yy for bibtex, yt for text citation)
 			return m, nil
 
 		case "v":
@@ -1858,7 +1854,7 @@ func buildHelpOutput() []string {
 		"  e ............ metadata preview + edit in editor",
 		"  n ............ edit note (Markdown)",
 		"  f / t / r .... favorite / to-read / cycle reading state",
-		"  y / yy ....... copy BibTeX",
+		"  yy ............ copy BibTeX",
 		"  yt ........... copy Title / Author / Year",
 		"  :arxiv ....... fetch arXiv metadata (:arxiv -v for selected files)",
 		"  :autofetch ... detect DOI/arXiv IDs in PDFs and import metadata",
@@ -2365,11 +2361,7 @@ func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 			}
 			return true, nil
 		}
-		if err := m.copyBibtexToClipboard(); err != nil {
-			m.setStatus("BibTeX copy failed: " + err.Error())
-		} else {
-			m.setStatus("BibTeX copied to clipboard")
-		}
+		// Single 'y' waits for next key (yy for bibtex, yt for text citation)
 		return true, nil
 	case "t":
 		if seq := m.yankSequence("t"); seq == "yt" {
