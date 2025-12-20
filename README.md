@@ -209,6 +209,14 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 That's it—you can re-clone and reinstall at any time.
 
+## Attribution / Credit
+
+This project is licensed under the MIT License.
+
+If you use Gorae in your project, documentation, or distribution, please credit:
+- **Gorae by Han**
+- link to the project repository
+
 ## Acknowledgements
 
 <table>
