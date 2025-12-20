@@ -8,6 +8,11 @@
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
+
+<p align="center">
+  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="650">
+</p>
+
 ## ✨ Highlights
 
 - ⚡ **Vim-style browsing**: fast file navigation with a cozy TUI feel.
@@ -18,12 +23,6 @@
 - 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
 - ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
 - 🎨 **Themeable UI**: colors, glyphs, borders — plus helper folders usable in any file manager.
-
-
-## Demo
-<p align="center">
-  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="700">
-</p>
 
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
