@@ -184,7 +184,6 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 ### New Features and Todo
 
 * [ ] ToDo management
-* [ ] Gif file
 * [ ] Vault warden for cloud support
 * [ ] WebServer
 * [ ] Trash
