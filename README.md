@@ -183,6 +183,7 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ### New Features and Todo
 
+* [ ] Open URL 
 * [ ] ToDo management
 * [ ] Vault warden for cloud support
 * [ ] WebServer
