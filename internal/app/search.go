@@ -271,6 +271,20 @@ func collectDocumentFiles(root string, skipDirs []string) ([]string, []string, e
 	return files, warnings, err
 }
 
+func collectPDFFiles(root string, skipDirs []string) ([]string, []string, error) {
+	files, warnings, err := collectDocumentFiles(root, skipDirs)
+	if err != nil {
+		return nil, warnings, err
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if strings.EqualFold(filepath.Ext(f), ".pdf") {
+			out = append(out, f)
+		}
+	}
+	return out, warnings, nil
+}
+
 func evaluatePath(path string, req searchRequest) (searchMatch, bool, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch req.mode {

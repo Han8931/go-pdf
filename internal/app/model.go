@@ -165,6 +165,8 @@ type Model struct {
 	previewText []string
 	previewPath string
 
+	autoMetadataAttempts map[string]time.Time
+
 	currentMeta     *meta.Metadata
 	currentMetaPath string
 	currentNote     string
@@ -485,6 +487,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		meta:                  store,
 		sortMode:              sortByName,
 		entryTitles:           make(map[string]string),
+		autoMetadataAttempts:  make(map[string]time.Time),
 		recentlyAddedDir:      strings.TrimSpace(cfg.RecentlyAddedDir),
 		recentlyAddedMaxAge:   time.Duration(cfg.RecentlyAddedDays) * 24 * time.Hour,
 		recentlyAddedSyncInt:  defaultRecentlyAddedSyncInterval,
@@ -571,7 +574,10 @@ func (m *Model) applyTheme(th theme.Theme) {
 // }
 
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(
+		textinput.Blink,
+		scheduleAutoMetadataScan(autoMetadataInitialScanDelay),
+	)
 }
 
 func (m *Model) setStatus(msg string) {

@@ -186,7 +186,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			doiCount     int
 			arxivCount   int
 		)
+		now := time.Now()
 		for _, res := range msg.Results {
+			success := res.Err == nil
+			if canonical := canonicalPath(res.Path); canonical != "" {
+				m.recordAutoMetadataResult(canonical, success, now)
+			}
 			if res.Err != nil {
 				name := filepath.Base(res.Path)
 				if name == "" {
@@ -242,6 +247,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatus(status)
 		return m, nil
+
+	case autoMetadataScanMsg:
+		cmds := []tea.Cmd{}
+		if cmd := m.autoMetadataCmdForMissing(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		cmds = append(cmds, scheduleAutoMetadataScan(autoMetadataScanInterval))
+		return m, tea.Batch(cmds...)
 
 	case searchResultMsg:
 		if msg.err != nil {
@@ -2098,6 +2111,11 @@ func normalizeArxivMatch(match []string) string {
 	}
 	id := strings.TrimSpace(match[1])
 	if id == "" {
+		return ""
+	}
+	lower := strings.ToLower(id)
+	// Guard against common false positives (e.g., JSTOR-style "stable/1234567").
+	if strings.HasPrefix(lower, "stable/") || strings.HasPrefix(lower, "stable.") {
 		return ""
 	}
 	if len(match) >= 3 {

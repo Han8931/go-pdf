@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,7 +19,14 @@ import (
 	"gorae/internal/meta"
 )
 
-const autoMetadataMaxPages = 4
+const (
+	autoMetadataMaxPages             = 4
+	autoMetadataScanInterval         = 10 * time.Minute
+	autoMetadataInitialScanDelay     = 3 * time.Second
+	autoMetadataRetrySuccessInterval = 24 * time.Hour
+	autoMetadataRetryFailureInterval = time.Hour
+	autoMetadataBatchSize            = 0 // 0 = no limit; process all eligible
+)
 
 type metadataSource string
 
@@ -30,6 +38,8 @@ const (
 type autoMetadataMsg struct {
 	Results []autoMetadataResult
 }
+
+type autoMetadataScanMsg struct{}
 
 type autoMetadataResult struct {
 	Path       string
@@ -161,6 +171,113 @@ func (m *Model) runAutoMetadata(files []string) tea.Cmd {
 		}
 		return autoMetadataMsg{Results: results}
 	}
+}
+
+func scheduleAutoMetadataScan(delay time.Duration) tea.Cmd {
+	return tea.Tick(delay, func(time.Time) tea.Msg { return autoMetadataScanMsg{} })
+}
+
+func (m *Model) autoMetadataCmdForMissing() tea.Cmd {
+	if m == nil || m.meta == nil {
+		return nil
+	}
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		return nil
+	}
+	root := m.root
+	if strings.TrimSpace(root) == "" {
+		root = m.cwd
+	}
+
+	skipDirs := m.autoMetadataSkipDirs()
+
+	files, _, err := collectPDFFiles(root, skipDirs)
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	limit := autoMetadataBatchSize
+	if limit <= 0 || limit > len(files) {
+		limit = len(files)
+	}
+	targets := make([]string, 0, limit)
+
+	for _, full := range files {
+		if len(targets) >= limit {
+			break
+		}
+		canonical := canonicalPath(full)
+		if canonical == "" {
+			continue
+		}
+		if !m.canAttemptAutoMetadata(canonical, now) {
+			continue
+		}
+		md, err := m.meta.Get(context.Background(), canonical)
+		if err != nil {
+			continue
+		}
+		if md != nil && strings.TrimSpace(md.Title) != "" {
+			continue
+		}
+
+		targets = append(targets, full)
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	return m.runAutoMetadata(targets)
+}
+
+func (m *Model) canAttemptAutoMetadata(path string, now time.Time) bool {
+	if m.autoMetadataAttempts == nil {
+		return true
+	}
+	if ts, ok := m.autoMetadataAttempts[path]; ok {
+		return now.After(ts)
+	}
+	return true
+}
+
+func (m *Model) recordAutoMetadataAttempt(path string, ts time.Time) {
+	if m.autoMetadataAttempts == nil {
+		m.autoMetadataAttempts = make(map[string]time.Time)
+	}
+	m.autoMetadataAttempts[path] = ts
+}
+
+func (m *Model) recordAutoMetadataResult(path string, success bool, now time.Time) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	dur := autoMetadataRetryFailureInterval
+	if success {
+		dur = autoMetadataRetrySuccessInterval
+	}
+	m.recordAutoMetadataAttempt(path, now.Add(dur))
+}
+
+func (m *Model) autoMetadataSkipDirs() []string {
+	var skip []string
+	if m.recentlyOpenedDir != "" {
+		skip = append(skip, m.recentlyOpenedDir)
+	}
+	if m.recentlyAddedDir != "" {
+		skip = append(skip, m.recentlyAddedDir)
+	}
+	if m.favoritesDir != "" {
+		skip = append(skip, m.favoritesDir)
+	}
+	if m.toReadDir != "" {
+		skip = append(skip, m.toReadDir)
+	}
+	if m.notesDir != "" {
+		skip = append(skip, m.notesDir)
+	}
+	return skip
 }
 
 func detectMetadataForFile(path string) (*fetchedPaperMetadata, error) {
