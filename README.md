@@ -181,8 +181,13 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ## Roadmap
 
+### Fix
+* [ ] Recently read issue when users move files
+* [ ] Recently read dir logic has to be changed to make it work over multi device environments
+
 ### New Features and Todo
 
+* [ ] Update all existing files having no metadata. 
 * [ ] Open URL 
 * [ ] ToDo management
 * [ ] Vault warden for cloud support
