@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Metadata struct {
@@ -58,7 +58,8 @@ func Open(dbPath string) (*Store, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	// db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", "file:app.db?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}

@@ -17,20 +17,29 @@ mkdir -p dist
 
 1. **Linux (amd64)**
    ```sh
-   go build -o dist/gorae ./cmd/gorae
-   ./dist/gorae -help     # sanity-check
+    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+    go build -o dist/gorae-linux-amd64 ./cmd/gorae
+
+    ./dist/gorae-linux-amd64 -help   # sanity-check
    ```
 2. **macOS (Intel)**
    ```sh
-   GOOS=darwin GOARCH=amd64 go build -o dist/gorae-darwin-amd64 ./cmd/gorae
+    CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+    go build -o dist/gorae-darwin-amd64 ./cmd/gorae
    ```
 3. **macOS (Apple Silicon)**
    ```sh
-   GOOS=darwin GOARCH=arm64 go build -o dist/gorae-darwin-arm64 ./cmd/gorae
+    CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+    go build -o dist/gorae-darwin-arm64 ./cmd/gorae
    ```
 4. **Windows (amd64)**
    ```sh
-   GOOS=windows GOARCH=amd64 go build -o dist/gorae-windows-amd64.exe ./cmd/gorae
+    sudo apt-get update
+    sudo apt-get install -y mingw-w64
+
+    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+    CC=x86_64-w64-mingw32-gcc \
+    go build -o dist/gorae-windows-amd64.exe ./cmd/gorae
    ```
 
 ## Distribute
