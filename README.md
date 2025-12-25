@@ -94,6 +94,18 @@ Install prerequisites:
 - Debian/Ubuntu: `sudo apt install golang-go poppler-utils`
 - Arch: `sudo pacman -S go poppler`
 
+### Execution Files
+
+You can use the pre-built binary for your platform from the latest GitHub Release (or from the `dist/` folder if you cloned the repo), place it somewhere on your `PATH`, and run it directly:
+1. Download the file that matches your OS/architecture:
+    - Linux: gorae
+    - macOS (Intel): gorae-darwin-amd64
+    - macOS (Apple Silicon / M1–M3): gorae-darwin-arm64
+    - Windows (64-bit): gorae-windows-amd64.exe
+2. Make it executable if needed (`chmod +x gorae-*` on Linux/macOS).
+3. Move it into a directory on your `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, or `%USERPROFILE%\bin`).
+4. Launch it from any terminal: `gorae`.
+
 ### Quick install (script)
 
 1. Clone this repository:
@@ -119,29 +131,7 @@ GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
 gorae        # optionally: gorae -root /path/to/Papers
 ```
 
-> You can also use the pre-built binary for your platform from the latest GitHub Release (or from the `dist/` folder if you cloned the repo), place it somewhere on your `PATH`, and run it directly:
-> 
-> 1. Download the file that matches your OS/architecture (`gorae`, `gorae-darwin-amd64`, `gorae-darwin-arm64`, or `gorae-windows-amd64.exe`).
-> 2. Make it executable if needed (`chmod +x gorae-*` on Linux/macOS).
-> 3. Move it into a directory on your `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, or `%USERPROFILE%\bin`).
-> 4. Launch it from any terminal: `gorae -root /path/to/Papers`.
 
-### Manual install
-
-```sh
-git clone https://github.com/Han8931/gorae.git
-cd gorae
-
-# Install to $(go env GOPATH)/bin so it is available everywhere
-go install ./cmd/gorae
-export PATH="$(go env GOPATH)/bin:$PATH"
-
-# or build/copy to a directory you manage
-go build -o gorae ./cmd/gorae
-install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
-```
-
-After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library).
 
 ## Config & themes
 
