@@ -78,60 +78,84 @@ You can do this manually by
 
 ## Install
 
-### Requirements
+### Option A) Run the pre-built executable (no Go required)
 
-**Required**
-- Go 1.21+
-- Poppler CLI tools: `pdftotext`, `pdfinfo`
+Download the ready-to-run binary from the **latest GitHub Release**.
+(If you cloned the repo, you might also have binaries in `dist/`.)
 
-**Optional (recommended)**
-- A fast PDF viewer (Zathura recommended below)
-    * Debian/Ubuntu: `sudo apt install zathura zathura-pdf-mupdf`
-    * Arch: `sudo pacman -S zathura zathura-pdf-mupdf`
+1. **Download the file for your OS/CPU**
 
-Install prerequisites:
-- macOS: `brew install golang poppler`
-- Debian/Ubuntu: `sudo apt install golang-go poppler-utils`
-- Arch: `sudo pacman -S go poppler`
+   * **Linux:** `gorae`
+   * **macOS (Intel):** `gorae-darwin-amd64`
+   * **macOS (Apple Silicon / M1–M3):** `gorae-darwin-arm64`
+   * **Windows (64-bit):** `gorae-windows-amd64.exe`
 
-### Execution Files
+2. **(Linux/macOS) Make it executable**
 
-You can use the pre-built binary for your platform from the latest GitHub Release (or from the `dist/` folder if you cloned the repo), place it somewhere on your `PATH`, and run it directly:
-1. Download the file that matches your OS/architecture:
-    - Linux: gorae
-    - macOS (Intel): gorae-darwin-amd64
-    - macOS (Apple Silicon / M1–M3): gorae-darwin-arm64
-    - Windows (64-bit): gorae-windows-amd64.exe
-2. Make it executable if needed (`chmod +x gorae-*` on Linux/macOS).
-3. Move it into a directory on your `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, or `%USERPROFILE%\bin`).
-4. Launch it from any terminal: `gorae`.
-
-### Quick install (script)
-
-1. Clone this repository:
-
-```sh
-git clone https://github.com/Han8931/gorae.git
-cd gorae
-```
-
-2. Run the helper script (default path: `~/.local/bin/gorae` on Linux, `/usr/local/bin/gorae` on macOS):
-
-```sh
-./install.sh
-
-# or choose another destination via env var or first argument
-GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
-./install.sh ~/bin/gorae
+   ```sh
+   chmod +x gorae*
    ```
 
-3. Ensure the destination directory is on your `PATH`, then launch:
+3. **Move it into a folder on your PATH** (so you can run it anywhere)
 
-```sh
-gorae        # optionally: gorae -root /path/to/Papers
-```
+   * Linux/macOS examples: `~/.local/bin`, `/usr/local/bin`
+   * Windows example: `%USERPROFILE%\bin`
 
+4. **Run it**
 
+   ```sh
+   gorae
+   ```
+
+> Tip: If your downloaded file has a long name (e.g., `gorae-darwin-arm64`), you can rename it to just `gorae` for convenience.
+
+---
+
+### Option B) Quick install (script)
+
+This option builds and installs Gorae using Go.
+
+#### Requirements
+
+* **Go 1.21+**
+* **Poppler CLI tools**: `pdftotext`, `pdfinfo`
+
+Install prerequisites:
+
+* **macOS:** `brew install golang poppler`
+* **Debian/Ubuntu:** `sudo apt install golang-go poppler-utils`
+* **Arch:** `sudo pacman -S go poppler`
+
+#### Optional (recommended)
+
+* A fast PDF viewer (**Zathura** recommended)
+
+  * **Debian/Ubuntu:** `sudo apt install zathura zathura-pdf-mupdf`
+  * **Arch:** `sudo pacman -S zathura zathura-pdf-mupdf`
+
+1. **Clone the repo**
+
+   ```sh
+   git clone https://github.com/Han8931/gorae.git
+   cd gorae
+   ```
+
+2. **Run the installer**
+   (Default install path: `~/.local/bin/gorae` on Linux, `/usr/local/bin/gorae` on macOS)
+
+   ```sh
+   ./install.sh
+
+   # Install to a custom path
+   GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
+   ./install.sh ~/bin/gorae
+   ```
+
+3. **Make sure the install directory is on your PATH**, then run:
+
+   ```sh
+   gorae
+   ```
 
 ## Config & themes
 
