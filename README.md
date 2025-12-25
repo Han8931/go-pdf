@@ -64,18 +64,6 @@ You can scope the search with flags:
 - `/ -c attention`
 - `/ --tag llm,graph`
 
-### Fetch arXiv metadata
-
-Gorae scans **DOIs** and **arXiv** identifiers from new files and populates metadata automatically when you first launch the app.
-
-You can do this manually by
-
-* Commands:
-    * `:autofetch [files...]` scans the current file (or specified files) for identifiers.
-* Batch apply:
-    * Select multiple files, then run:
-    * `:autofetch -v` applies to the current selection.
-
 ## Install
 
 ### Option A) Run the pre-built executable (no Go required)
@@ -156,24 +144,6 @@ Install prerequisites:
    ```sh
    gorae
    ```
-
-## Config & themes
-
-Gorae stores configuration and user data in standard locations:
-
-* Config + theme:
-  * `~/.config/gorae/`
-  * `~/.config/gorae/theme.toml`
-* Data (metadata DB, notes, cache):
-  * `~/.local/share/gorae/`
-
-You can open and edit the config from inside the app using `:config`.
-
-If you prefer a different look, pick one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and set `theme_path` in the config (via `:config`), or copy a theme file to:
-
-```sh
-cp themes/matcha.toml ~/.config/gorae/theme.toml
-```
 
 ## Recommended PDF viewer
 
