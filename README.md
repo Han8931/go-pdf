@@ -66,7 +66,7 @@ You can scope the search with flags:
 
 ### Fetch arXiv metadata
 
-Gorae scans **DOI** or **arXiv identifiers** from new files and populates metadata automatically.
+Gorae scans **DOIs** and **arXiv** identifiers from new files and populates metadata automatically when you first launch the app.
 
 You can do this manually by
 
