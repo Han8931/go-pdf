@@ -66,6 +66,12 @@ You can scope the search with flags:
 
 ## Install
 
+For Arch Linux users:
+```sh
+yay -S gorae
+```
+
+
 ### Option A) Run the pre-built executable (no Go required)
 
 Download the ready-to-run binary from the **latest GitHub Release**.
