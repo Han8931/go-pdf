@@ -58,8 +58,9 @@ func Open(dbPath string) (*Store, error) {
 		return nil, err
 	}
 
-	// db, err := sql.Open("sqlite3", dbPath)
-	db, err := sql.Open("sqlite", "file:app.db?_pragma=busy_timeout(5000)")
+	cleanPath := filepath.Clean(dbPath)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)", filepath.ToSlash(cleanPath))
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}

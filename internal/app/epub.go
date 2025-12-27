@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/net/html"
 	"encoding/xml"
+
+	"golang.org/x/net/html"
 )
 
 // readEPUBText extracts concatenated plain text from an EPUB by following its
@@ -47,12 +48,12 @@ func readEPUBText(path string) (string, error) {
 }
 
 type opfPackage struct {
-	Manifest map[string]string // id -> href
-	Spine    []string          // ordered itemref IDs
-	Title    string
-	Creator  string
-	Date     string
-	Subject  string
+	Manifest     map[string]string // id -> href
+	Spine        []string          // ordered itemref IDs
+	Title        string
+	Creator      string
+	Date         string
+	Subject      string
 	rootfilePath string
 }
 
@@ -307,5 +308,3 @@ func stripHTMLToText(data []byte) string {
 	f(doc)
 	return buf.String()
 }
-
-

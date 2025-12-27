@@ -34,4 +34,3 @@ func extractEPUBPackage(path string) (opfPackage, error) {
 	defer rc.Close()
 	return pkg, nil
 }
-
